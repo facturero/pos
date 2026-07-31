@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { mdiCartOutline, mdiPlus, mdiMinus, mdiCashRegister } from "@mdi/js";
 import { useCartStore } from "../stores/cart";
+import Icon from "./Icon.vue";
 
 const cart = useCartStore();
 
@@ -9,7 +11,10 @@ const emit = defineEmits<{ checkout: [] }>();
 <template>
   <aside class="w-96 shrink-0 bg-white border-l border-gray-200 flex flex-col h-full">
     <div class="p-4 border-b border-gray-200">
-      <h2 class="font-semibold text-gray-800">Carrito ({{ cart.itemCount }})</h2>
+      <h2 class="font-semibold text-gray-800 flex items-center gap-1.5">
+        <Icon :path="mdiCartOutline" :size="18" class="text-brand-600" />
+        Carrito ({{ cart.itemCount }})
+      </h2>
     </div>
 
     <div class="flex-1 overflow-y-auto p-4 space-y-3">
@@ -28,17 +33,17 @@ const emit = defineEmits<{ checkout: [] }>();
         </div>
         <div class="flex items-center gap-2 shrink-0">
           <button
-            class="w-7 h-7 rounded bg-gray-100 hover:bg-gray-200 text-gray-600"
+            class="w-7 h-7 flex items-center justify-center rounded bg-gray-100 hover:bg-gray-200 text-gray-600"
             @click="cart.setQuantity(line.product.id, line.quantity - 1)"
           >
-            −
+            <Icon :path="mdiMinus" :size="14" />
           </button>
           <span class="w-6 text-center text-sm">{{ line.quantity }}</span>
           <button
-            class="w-7 h-7 rounded bg-gray-100 hover:bg-gray-200 text-gray-600"
+            class="w-7 h-7 flex items-center justify-center rounded bg-gray-100 hover:bg-gray-200 text-gray-600"
             @click="cart.setQuantity(line.product.id, line.quantity + 1)"
           >
-            +
+            <Icon :path="mdiPlus" :size="14" />
           </button>
         </div>
       </div>
@@ -54,10 +59,11 @@ const emit = defineEmits<{ checkout: [] }>();
         <span>${{ cart.total.toFixed(2) }}</span>
       </div>
       <button
-        class="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white font-medium py-3 rounded-lg transition mt-2"
+        class="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white font-medium py-3 rounded-lg transition mt-2 flex items-center justify-center gap-1.5"
         :disabled="cart.lines.length === 0"
         @click="emit('checkout')"
       >
+        <Icon :path="mdiCashRegister" :size="18" />
         Cobrar
       </button>
     </div>

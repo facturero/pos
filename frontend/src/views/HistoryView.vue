@@ -2,6 +2,8 @@
 import { ref, onMounted } from "vue";
 import { api } from "../api/client";
 import { useSyncStore } from "../stores/sync";
+import Icon from "../components/Icon.vue";
+import { mdiHistory, mdiSync, mdiTrashCanOutline } from "@mdi/js";
 
 interface SaleItem {
   id: number;
@@ -52,11 +54,15 @@ onMounted(loadSales);
 <template>
   <div class="h-full overflow-y-auto p-4">
     <div class="flex items-center justify-between mb-4">
-      <h1 class="text-lg font-semibold text-gray-800">Historial de ventas</h1>
+      <h1 class="text-lg font-semibold text-gray-800 flex items-center gap-1.5">
+        <Icon :path="mdiHistory" :size="18" class="text-brand-600" />
+        Historial de ventas
+      </h1>
       <button
-        class="text-sm text-brand-600 hover:text-brand-700"
+        class="text-sm text-brand-600 hover:text-brand-700 flex items-center gap-1"
         @click="sync.forceSyncNow()"
       >
+        <Icon :path="mdiSync" :size="16" />
         Sincronizar ahora
       </button>
     </div>
@@ -93,9 +99,10 @@ onMounted(loadSales);
             <span class="font-semibold text-gray-800">${{ Number(sale.total).toFixed(2) }}</span>
             <button
               v-if="sale.status === 'COMPLETED'"
-              class="text-xs text-red-600 hover:text-red-700"
+              class="text-xs text-red-600 hover:text-red-700 flex items-center gap-1"
               @click.stop="voidSale(sale.id)"
             >
+              <Icon :path="mdiTrashCanOutline" :size="14" />
               Anular
             </button>
           </div>
