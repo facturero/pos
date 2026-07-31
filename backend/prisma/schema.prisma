@@ -1,0 +1,175 @@
+// Esquema del POS local.
+// MySQL aquí funciona como CACHÉ + cola de ventas, no como fuente de verdad:
+// - products/categories: se sincronizan DESDE el admin (remoteId los vincula).
+// - sales/sale_items: se generan LOCALMENTE y se empujan HACIA el admin
+//   (campo `synced` + `syncedAt` llevan el control).
+// Las migraciones (`prisma migrate deploy`) corren en cada actualización
+// de la app, no dependen de reinstalar el sistema operativo.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  CASHIER
+}
+
+enum SaleStatus {
+  COMPLETED
+  VOIDED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  TRANSFER
+  OTHER
+}
+
+enum CashSessionStatus {
+  OPEN
+  CLOSED
+}
+
+enum SyncDirection {
+  PULL // datos bajados del admin (productos, categorías)
+  PUSH // datos subidos al admin (ventas)
+}
+
+enum SyncStatus {
+  SUCCESS
+  ERROR
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  remoteId     Int?     @unique // id en el admin, si el usuario viene sincronizado de allá
+  name         String
+  username     String   @unique
+  passwordHash String
+  role         Role     @default(CASHIER)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  cashSessions CashSession[]
+  sales        Sale[]
+
+  @@map("users")
+}
+
+model Category {
+  id       Int       @id @default(autoincrement())
+  remoteId Int?      @unique // id en el admin
+  name     String    @unique
+  products Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id          Int      @id @default(autoincrement())
+  remoteId    Int?     @unique // id en el admin (clave para el sync)
+  sku         String?  @unique
+  barcode     String?  @unique
+  name        String
+  description String?
+  price       Decimal  @db.Decimal(10, 2)
+  cost        Decimal? @db.Decimal(10, 2)
+  stock       Decimal  @default(0) @db.Decimal(10, 3)
+  unit        String   @default("unidad")
+  active      Boolean  @default(true)
+  categoryId  Int?
+  syncedAt    DateTime? // última vez que se actualizó desde el admin
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  category  Category?  @relation(fields: [categoryId], references: [id])
+  saleItems SaleItem[]
+
+  @@index([categoryId])
+  @@map("products")
+}
+
+model CashSession {
+  id             Int               @id @default(autoincrement())
+  userId         Int
+  openedAt       DateTime          @default(now())
+  closedAt       DateTime?
+  openingAmount  Decimal           @db.Decimal(10, 2)
+  closingAmount  Decimal?          @db.Decimal(10, 2)
+  expectedAmount Decimal?          @db.Decimal(10, 2)
+  status         CashSessionStatus @default(OPEN)
+  notes          String?
+
+  user  User   @relation(fields: [userId], references: [id])
+  sales Sale[]
+
+  @@index([userId])
+  @@map("cash_sessions")
+}
+
+model Sale {
+  id            Int           @id @default(autoincrement())
+  cashSessionId Int
+  userId        Int
+  subtotal      Decimal       @db.Decimal(10, 2)
+  tax           Decimal       @default(0) @db.Decimal(10, 2)
+  discount      Decimal       @default(0) @db.Decimal(10, 2)
+  total         Decimal       @db.Decimal(10, 2)
+  paymentMethod PaymentMethod @default(CASH)
+  status        SaleStatus    @default(COMPLETED)
+
+  // --- control de sincronización hacia el admin ---
+  synced      Boolean   @default(false)
+  syncedAt    DateTime?
+  syncError   String?
+  remoteId    Int? // id que asignó el admin al recibir la venta
+
+  createdAt DateTime @default(now())
+
+  cashSession CashSession @relation(fields: [cashSessionId], references: [id])
+  user        User        @relation(fields: [userId], references: [id])
+  items       SaleItem[]
+
+  @@index([cashSessionId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([synced])
+  @@map("sales")
+}
+
+model SaleItem {
+  id        Int     @id @default(autoincrement())
+  saleId    Int
+  productId Int
+  quantity  Decimal @db.Decimal(10, 3)
+  unitPrice Decimal @db.Decimal(10, 2)
+  subtotal  Decimal @db.Decimal(10, 2)
+
+  sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([saleId])
+  @@index([productId])
+  @@map("sale_items")
+}
+
+// Bitácora de sincronizaciones — útil para depurar "por qué no bajaron los precios"
+// o "por qué esta venta no subió al admin" sin tener que revisar logs de systemd.
+model SyncLog {
+  id        Int           @id @default(autoincrement())
+  direction SyncDirection
+  status    SyncStatus
+  message   String?
+  itemCount Int           @default(0)
+  createdAt DateTime      @default(now())
+
+  @@index([createdAt])
+  @@map("sync_logs")
+}
