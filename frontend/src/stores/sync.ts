@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import { api } from "../api/client";
+import { onSocketEvent, onSocketConnect } from "../socket/localSocket";
 
 interface SyncLog {
   id: number;
@@ -15,16 +16,16 @@ interface SyncStatusResponse {
 }
 
 // Refleja el estado de sincronización del backend local (que es quien
-// realmente habla con el admin). El frontend solo consulta /sync/status
-// y puede forzar /sync/run — nunca sincroniza directo, para que la lógica
-// de reintentos/errores viva en un solo lugar (el backend).
+// realmente habla con el admin). El backend empuja `sync.status` por el socket
+// local tras cada ciclo de sync y cada venta; aquí solo se consulta /sync/status
+// al arrancar o al (re)conectar, nunca en bucle.
 export const useSyncStore = defineStore("sync", {
   state: () => ({
     lastPull: null as SyncLog | null,
     lastPush: null as SyncLog | null,
     pendingSales: 0,
     checking: false,
-    pollHandle: null as ReturnType<typeof setInterval> | null,
+    syncListener: null as (() => void) | null,
   }),
   getters: {
     isOnline: (state) => state.lastPull?.status === "SUCCESS",
@@ -48,14 +49,27 @@ export const useSyncStore = defineStore("sync", {
       await api.post("/sync/run");
       await this.refresh();
     },
-    startPolling(intervalMs = 30_000) {
-      this.refresh();
-      if (this.pollHandle) clearInterval(this.pollHandle);
-      this.pollHandle = setInterval(() => this.refresh(), intervalMs);
+    // Escucha los push `sync.status` del backend (tiempo real, sin polling).
+    // Al (re)conectar hace un único /sync/status para resincronizar.
+    startSyncListener() {
+      if (this.syncListener) return;
+      const offStatus = onSocketEvent<SyncStatusResponse>("sync.status", (res) => {
+        this.lastPull = res.lastPull;
+        this.lastPush = res.lastPush;
+        this.pendingSales = res.pendingSales;
+      });
+      const offConnected = onSocketConnect(() => {
+        void this.refresh();
+      });
+      void this.refresh();
+      this.syncListener = () => {
+        offStatus();
+        offConnected();
+      };
     },
-    stopPolling() {
-      if (this.pollHandle) clearInterval(this.pollHandle);
-      this.pollHandle = null;
+    stopSyncListener() {
+      this.syncListener?.();
+      this.syncListener = null;
     },
   },
 });

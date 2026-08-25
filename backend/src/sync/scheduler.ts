@@ -1,6 +1,10 @@
 import cron from "node-cron";
+import { prisma } from "../db.js";
+import { diagnoseDbError } from "../db-guide.js";
 import { pullFromAdmin } from "./pull.js";
 import { pushToAdmin } from "./push.js";
+import { getSyncState } from "./status.js";
+import { emitSyncState } from "../local/socket.js";
 
 let isSyncing = false;
 
@@ -12,9 +16,28 @@ export async function runSyncCycle(): Promise<void> {
   isSyncing = true;
 
   try {
+    // Sin emparejar, no hay organizationId/refreshToken con qué sincronizar.
+    // Salir en silencio (sin loguear error cada 5 min) hasta que se empareje
+    // desde la pantalla de "Configurar POS".
+    try {
+      const config = await prisma.posConfig.findUnique({ where: { id: 1 } });
+      if (!config) return;
+    } catch (err) {
+      const issue = diagnoseDbError(err);
+      if (issue.guide) {
+        console.error(`[sync] problema con la base de datos local:\n${issue.guide}`);
+      } else {
+        console.error("[sync] no se pudo leer la config del POS:", err instanceof Error ? err.message : err);
+      }
+      return;
+    }
+
     try {
       const result = await pullFromAdmin();
-      console.log(`[sync] pull OK: ${result.categories} categorías, ${result.products} productos`);
+      console.log(
+        `[sync] pull OK: ${result.categories} categorías, ${result.products} productos, ` +
+          `${result.users} usuarios, ${result.customers} clientes`,
+      );
     } catch (err) {
       console.error("[sync] pull falló:", err instanceof Error ? err.message : err);
     }
@@ -29,6 +52,13 @@ export async function runSyncCycle(): Promise<void> {
     }
   } finally {
     isSyncing = false;
+    // Empuja el estado actualizado al frontend (indicador de sync) en tiempo
+    // real, sin que tenga que consultar /sync/status por su cuenta.
+    void getSyncState()
+      .then((state) => emitSyncState(state))
+      .catch((err) =>
+        console.error("[sync] no se pudo emitir el estado:", err instanceof Error ? err.message : err),
+      );
   }
 }
 

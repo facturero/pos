@@ -47,12 +47,38 @@ enum SyncStatus {
   ERROR
 }
 
+enum CustomerType {
+  PERSON
+  COMPANY
+}
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum AddressType {
+  BILLING
+  SHIPPING
+  OTHER
+}
+
+// Los usuarios se sincronizan DESDE el admin (auth-service): `remoteId` es el
+// uuid del user en el CRM y `username` es su código de 7 caracteres del CRM
+// (con el que hace login en el POS). `email` del CRM se guarda aparte para
+// poder validar la contraseña contra auth-service en el primer login. El sync
+// baja el hash argon2id del CRM en `passwordHash`, así el login valida
+// LOCALMENTE (offline). null = el usuario no tiene contraseña en el CRM
+// (p.ej. cuenta solo Google o invitación aún sin aceptar). Los usuarios
+// creados 100% localmente (seed/consola) tienen remoteId null, passwordHash
+// bcrypt obligatorio y no necesitan email.
 model User {
   id           Int      @id @default(autoincrement())
-  remoteId     Int?     @unique // id en el admin, si el usuario viene sincronizado de allá
+  remoteId     String?  @unique // uuid del user en el admin (auth-service)
   name         String
-  username     String   @unique
-  passwordHash String
+  username     String   @unique // para usuarios del CRM = su código de 7 caracteres
+  email        String? // email del CRM (para validar contraseña); null en usuarios locales
+  passwordHash String? // null = sin contraseña vinculada aún
   role         Role     @default(CASHIER)
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
@@ -63,9 +89,70 @@ model User {
   @@map("users")
 }
 
+// Clientes espejados desde customer-service (org del punto de emisión). La
+// cabecera X-Organization-Id la inyecta el gateway, así que esto siempre son
+// los clientes de la organización del POS. Contactos/direcciones se bajan
+// como read-model local (el POS no los edita; son solo para consulta).
+model Customer {
+  id                    Int            @id @default(autoincrement())
+  remoteId              String?        @unique // uuid del cliente en el admin
+  countryCode           String?
+  identificationTypeId  String? // uuid del tipo en el CRM (informativo)
+  identification        String?
+  businessName          String
+  tradeName             String?
+  email                 String?
+  phone                 String?
+  type                  CustomerType   @default(PERSON)
+  status                CustomerStatus @default(ACTIVE)
+  syncedAt              DateTime?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  contacts  CustomerContact[]
+  addresses CustomerAddress[]
+  sales     Sale[]
+
+  @@map("customers")
+}
+
+model CustomerContact {
+  id         Int     @id @default(autoincrement())
+  remoteId   String? @unique // uuid del contacto en el admin
+  customerId Int
+  name       String
+  email      String?
+  phone      String?
+  position   String?
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("customer_contacts")
+}
+
+model CustomerAddress {
+  id          Int         @id @default(autoincrement())
+  remoteId    String?     @unique // uuid de la dirección en el admin
+  customerId  Int
+  type        AddressType @default(OTHER)
+  line1       String
+  line2       String?
+  city        String?
+  province    String?
+  countryCode String?
+  postalCode  String?
+  isPrimary   Boolean     @default(false)
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("customer_addresses")
+}
+
 model Category {
   id       Int       @id @default(autoincrement())
-  remoteId Int?      @unique // id en el admin
+  remoteId String?   @unique // uuid del admin (product-service)
   name     String    @unique
   products Product[]
 
@@ -73,21 +160,22 @@ model Category {
 }
 
 model Product {
-  id          Int      @id @default(autoincrement())
-  remoteId    Int?     @unique // id en el admin (clave para el sync)
-  sku         String?  @unique
-  barcode     String?  @unique
-  name        String
-  description String?
-  price       Decimal  @db.Decimal(10, 2)
-  cost        Decimal? @db.Decimal(10, 2)
-  stock       Decimal  @default(0) @db.Decimal(10, 3)
-  unit        String   @default("unidad")
-  active      Boolean  @default(true)
-  categoryId  Int?
-  syncedAt    DateTime? // última vez que se actualizó desde el admin
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           Int      @id @default(autoincrement())
+  remoteId     String?  @unique // uuid del admin (product-service)
+  sku          String?  @unique
+  barcode      String?  @unique // uso futuro; product-service no lo maneja aún
+  name         String
+  description  String?
+  price        Decimal  @db.Decimal(10, 2)
+  currencyCode String   @default("USD")
+  cost         Decimal? @db.Decimal(10, 2) // no viene del admin todavía; reservado
+  stock        Decimal  @default(0) @db.Decimal(10, 3) // sin control real aún (ver README)
+  unit         String   @default("unidad")
+  active       Boolean  @default(true)
+  categoryId   Int?
+  syncedAt     DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   category  Category?  @relation(fields: [categoryId], references: [id])
   saleItems SaleItem[]
@@ -118,6 +206,7 @@ model Sale {
   id            Int           @id @default(autoincrement())
   cashSessionId Int
   userId        Int
+  customerId    Int?
   subtotal      Decimal       @db.Decimal(10, 2)
   tax           Decimal       @default(0) @db.Decimal(10, 2)
   discount      Decimal       @default(0) @db.Decimal(10, 2)
@@ -129,16 +218,18 @@ model Sale {
   synced      Boolean   @default(false)
   syncedAt    DateTime?
   syncError   String?
-  remoteId    Int? // id que asignó el admin al recibir la venta
+  remoteId    String? // uuid que asignaría billing-service (aún no existe, ver README)
 
   createdAt DateTime @default(now())
 
   cashSession CashSession @relation(fields: [cashSessionId], references: [id])
   user        User        @relation(fields: [userId], references: [id])
+  customer    Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
   items       SaleItem[]
 
   @@index([cashSessionId])
   @@index([userId])
+  @@index([customerId])
   @@index([createdAt])
   @@index([synced])
   @@map("sales")
@@ -172,4 +263,35 @@ model SyncLog {
 
   @@index([createdAt])
   @@map("sync_logs")
+}
+
+// Configuración de emparejamiento — fila única (id fijo = 1). Se llena una
+// sola vez cuando el POS pide el código de 6 dígitos y se empareja contra
+// organization-service. Mientras esta tabla esté vacía, el POS no sabe a
+// qué organización/punto de emisión pertenece y el módulo de sync no corre.
+model PosConfig {
+  id              Int      @id @default(1)
+  organizationId  String
+  establishmentId String
+  emissionPointId String
+  refreshToken    String   @db.Text // se rota en cada refresh; siempre el último válido
+  pairedAt        DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("pos_config")
+}
+
+// Identidad estable del equipo — fila única (id fijo = 1). Se genera en el
+// PRIMER arranque (antes de emparejar) y nunca cambia mientras dure la
+// instalación física. Es el UUID que se envía en /pair y por el que el CRM
+// identifica a este terminal: al desvincular, el evento llega por socket.io
+// a `device:<deviceId>` y el POS se desvincula solo. Si se reinstala el SO
+// se borra y nace un deviceId nuevo (otro "equipo").
+model PosIdentity {
+  id        Int      @id @default(1)
+  deviceId  String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("pos_identity")
 }

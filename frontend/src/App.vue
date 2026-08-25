@@ -1,23 +1,41 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, computed } from "vue";
+import { onMounted, onUnmounted, computed, watch } from "vue";
 import { useRouter } from "vue-router";
 import { mdiStorefront, mdiHistory, mdiLogout, mdiCloudCheckOutline, mdiCloudSyncOutline, mdiCloudOffOutline } from "@mdi/js";
 import { useAuthStore } from "./stores/auth";
 import { useSyncStore } from "./stores/sync";
+import { useSetupStore } from "./stores/setup";
 import Icon from "./components/Icon.vue";
 
 const auth = useAuthStore();
 const sync = useSyncStore();
+const setup = useSetupStore();
 const router = useRouter();
 
 onMounted(() => {
   auth.restoreSession();
-  sync.startPolling();
+  setup.startUnlinkListener();
+  sync.startSyncListener();
 });
 
 onUnmounted(() => {
-  sync.stopPolling();
+  setup.stopUnlinkListener();
+  sync.stopSyncListener();
 });
+
+// Desvinculación remota: el admin presionó "Desvincular y regenerar" en el
+// CRM y el backend local ya limpió su par. El evento `unlinked` (socket.io
+// local, tiempo real) marca paired:false con reachable:true, así que cerramos
+// sesión local y volvemos a la pantalla de emparejamiento.
+watch(
+  () => setup.paired,
+  (paired, wasPaired) => {
+    if (!paired && wasPaired && setup.reachable) {
+      auth.logout();
+      router.push({ name: "setup" });
+    }
+  },
+);
 
 const syncLabel = computed(() => {
   if (sync.pendingSales > 0) return `${sync.pendingSales} venta(s) por sincronizar`;

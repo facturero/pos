@@ -4,6 +4,8 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { authMiddleware } from "../middleware/auth.js";
 import type { JwtPayload } from "../utils/jwt.js";
+import { getSyncState } from "../sync/status.js";
+import { emitSyncState } from "../local/socket.js";
 
 export const saleRoutes = new Hono<{ Variables: { user: JwtPayload } }>();
 
@@ -16,6 +18,7 @@ const saleItemSchema = z.object({
 
 const createSaleSchema = z.object({
   cashSessionId: z.number().int(),
+  customerId: z.number().int().optional(),
   items: z.array(saleItemSchema).min(1),
   discount: z.number().nonnegative().default(0),
   tax: z.number().nonnegative().default(0),
@@ -31,7 +34,10 @@ saleRoutes.post("/", async (c) => {
   const parsed = createSaleSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
 
-  const { cashSessionId, items, discount, tax, paymentMethod } = parsed.data;
+  const { cashSessionId, customerId, items, discount, tax, paymentMethod } = parsed.data;
+
+  // Si no se elige cliente, asignar CONSUMIDOR FINAL (id=1, siempre existe)
+  const finalCustomerId = customerId ?? 1;
 
   try {
     const sale = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -48,9 +54,10 @@ saleRoutes.post("/", async (c) => {
         if (!product || !product.active) {
           throw new Error(`Producto ${item.productId} no encontrado`);
         }
-        if (Number(product.stock) < item.quantity) {
-          throw new Error(`Stock insuficiente para "${product.name}"`);
-        }
+        // Sin control de stock por ahora: product-service (admin) todavía no
+        // maneja inventario (trackStock es un flag reservado para una fase
+        // futura). La venta siempre se permite; cuando exista inventory-service,
+        // este es el lugar para reintroducir la validación.
 
         const unitPrice = Number(product.price);
         const lineSubtotal = unitPrice * item.quantity;
@@ -62,11 +69,6 @@ saleRoutes.post("/", async (c) => {
           unitPrice,
           subtotal: lineSubtotal,
         });
-
-        await tx.product.update({
-          where: { id: product.id },
-          data: { stock: { decrement: item.quantity } },
-        });
       }
 
       const total = subtotal + tax - discount;
@@ -75,6 +77,7 @@ saleRoutes.post("/", async (c) => {
         data: {
           cashSessionId,
           userId: user.sub,
+          customerId: finalCustomerId,
           subtotal,
           tax,
           discount,
@@ -82,9 +85,15 @@ saleRoutes.post("/", async (c) => {
           paymentMethod,
           items: { create: itemsData },
         },
-        include: { items: { include: { product: true } } },
+        include: { items: { include: { product: true } }, customer: true },
       });
     });
+
+    // La venta queda pendiente de subir: avisamos al frontend para que el
+    // indicador de "ventas por sincronizar" cambie al instante (sin polling).
+    void getSyncState()
+      .then((state) => emitSyncState(state))
+      .catch(() => undefined);
 
     return c.json(sale, 201);
   } catch (err) {
@@ -108,7 +117,7 @@ saleRoutes.get("/", async (c) => {
           }
         : {}),
     },
-    include: { items: { include: { product: true } }, user: { select: { name: true } } },
+    include: { items: { include: { product: true } }, user: { select: { name: true } }, customer: true },
     orderBy: { createdAt: "desc" },
     take: 200,
   });
@@ -120,7 +129,7 @@ saleRoutes.get("/:id", async (c) => {
   const id = Number(c.req.param("id"));
   const sale = await prisma.sale.findUnique({
     where: { id },
-    include: { items: { include: { product: true } }, user: { select: { name: true } } },
+    include: { items: { include: { product: true } }, user: { select: { name: true } }, customer: true },
   });
   if (!sale) return c.json({ error: "Venta no encontrada" }, 404);
   return c.json(sale);
@@ -136,12 +145,8 @@ saleRoutes.post("/:id/void", async (c) => {
         throw new Error("Venta no encontrada o ya anulada");
       }
 
-      for (const item of existing.items) {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stock: { increment: Number(item.quantity) } },
-        });
-      }
+      // Sin reposición de stock: no se descuenta al vender (ver nota arriba),
+      // así que tampoco hay nada que reponer al anular.
 
       return tx.sale.update({ where: { id }, data: { status: "VOIDED" } });
     });

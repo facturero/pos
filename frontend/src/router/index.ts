@@ -1,9 +1,11 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { useAuthStore } from "../stores/auth";
+import { useSetupStore } from "../stores/setup";
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
+    { path: "/setup", name: "setup", component: () => import("../views/SetupView.vue") },
     { path: "/login", name: "login", component: () => import("../views/LoginView.vue") },
     {
       path: "/",
@@ -20,9 +22,25 @@ const router = createRouter({
   ],
 });
 
-// Guard simple: sin sesión -> login. Con sesión intentando ir a /login -> POS.
-router.beforeEach((to) => {
+// Orden de guardas: primero el emparejamiento (¿este POS ya sabe a qué
+// organización pertenece?), y solo después la sesión normal de cajero.
+// Sin emparejar, ni el login tiene sentido — no habría contra qué sincronizar.
+router.beforeEach(async (to) => {
+  const setup = useSetupStore();
+  if (!setup.checked) {
+    await setup.checkStatus();
+  }
+
+  if (!setup.paired) {
+    if (to.name !== "setup") return { name: "setup" };
+    return;
+  }
+
   const auth = useAuthStore();
+
+  if (to.name === "setup") {
+    return { name: auth.isAuthenticated ? "pos" : "login" };
+  }
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
     return { name: "login" };
   }

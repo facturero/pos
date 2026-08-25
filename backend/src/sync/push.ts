@@ -8,6 +8,12 @@ const TERMINAL_ID = process.env.TERMINAL_ID ?? "pos-desconocido";
 // las siguientes igual se intentan (un error de una venta no debe
 // bloquear el resto de la cola). Los errores quedan guardados en
 // `syncError` para poder revisarlos sin mirar logs.
+//
+// IMPORTANTE: billing-service (donde vivirían las facturas) todavía no
+// existe en el CRM. Esta función fallará SIEMPRE hasta que ese servicio
+// exponga un endpoint de ingesta — eso es esperado, no un bug. Las ventas
+// se acumulan sin pérdida en `synced: false` y se subirán solas apenas
+// exista el endpoint real (solo hay que ajustar admin-client.ts).
 export async function pushToAdmin(): Promise<{ pushed: number; failed: number }> {
   const pending = await prisma.sale.findMany({
     where: { synced: false, status: "COMPLETED" },

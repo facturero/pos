@@ -13,6 +13,7 @@ productRoutes.use("*", authMiddleware);
 productRoutes.get("/", async (c) => {
   const search = c.req.query("search");
   const barcode = c.req.query("barcode");
+  const categoryId = c.req.query("categoryId");
 
   if (barcode) {
     const product = await prisma.product.findFirst({
@@ -25,6 +26,7 @@ productRoutes.get("/", async (c) => {
   const products = await prisma.product.findMany({
     where: {
       active: true,
+      ...(categoryId ? { categoryId: Number(categoryId) } : {}),
       ...(search
         ? {
             OR: [
@@ -37,7 +39,7 @@ productRoutes.get("/", async (c) => {
     },
     include: { category: true },
     orderBy: { name: "asc" },
-    take: 100,
+    take: 200,
   });
 
   return c.json(products);

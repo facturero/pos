@@ -11,6 +11,14 @@ export interface Product {
   categoryId: number | null;
 }
 
+export interface Customer {
+  id: number;
+  businessName: string;
+  tradeName: string | null;
+  identification: string | null;
+  email: string | null;
+}
+
 export interface CartLine {
   product: Product;
   quantity: number;
@@ -21,6 +29,7 @@ export const useCartStore = defineStore("cart", {
     lines: [] as CartLine[],
     discount: 0,
     tax: 0,
+    customer: null as Customer | null,
   }),
   getters: {
     subtotal: (state) =>
@@ -51,10 +60,20 @@ export const useCartStore = defineStore("cart", {
     removeLine(productId: number) {
       this.lines = this.lines.filter((l) => l.product.id !== productId);
     },
+    setDiscount(value: number) {
+      this.discount = value;
+    },
+    setTax(value: number) {
+      this.tax = value;
+    },
+    setCustomer(c: Customer | null) {
+      this.customer = c;
+    },
     clear() {
       this.lines = [];
       this.discount = 0;
       this.tax = 0;
+      this.customer = null;
     },
   },
 });

@@ -8,8 +8,12 @@ import { categoryRoutes } from "./routes/categories.routes.js";
 import { productRoutes } from "./routes/products.routes.js";
 import { saleRoutes } from "./routes/sales.routes.js";
 import { cashSessionRoutes } from "./routes/cash-sessions.routes.js";
+import { customerRoutes } from "./routes/customers.routes.js";
 import { syncRoutes } from "./routes/sync.routes.js";
+import { setupRoutes } from "./routes/setup.routes.js";
 import { startSyncScheduler } from "./sync/scheduler.js";
+import { startRealtime } from "./sync/realtime.js";
+import { startLocalSocket } from "./local/socket.js";
 
 const app = new Hono();
 
@@ -25,11 +29,15 @@ app.route("/categories", categoryRoutes);
 app.route("/products", productRoutes);
 app.route("/sales", saleRoutes);
 app.route("/cash-sessions", cashSessionRoutes);
+app.route("/customers", customerRoutes);
 app.route("/sync", syncRoutes);
+app.route("/setup", setupRoutes);
 
 const port = Number(process.env.PORT ?? 4000);
 
 serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, (info) => {
   console.log(`POS backend escuchando en http://127.0.0.1:${info.port}`);
   startSyncScheduler();
+  startRealtime();
+  startLocalSocket();
 });

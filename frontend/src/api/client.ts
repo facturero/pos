@@ -38,6 +38,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (res.status === 401) {
+    const body = await res.json().catch(() => null);
+    // /auth/login es la única ruta pública: su 401 significa credenciales
+    // incorrectas (o CRM inalcanzable en el primer vínculo) y el mensaje real
+    // viene del backend ("Contraseña incorrecta", "Sin conexión...", etc.).
+    // Cualquier otro 401 (petición autenticada) es un token vencido/inválido.
+    if (path === "/auth/login") {
+      throw new ApiError(body?.error ?? "Usuario o contraseña incorrectos", 401);
+    }
     setToken(null);
     throw new ApiError("Sesión expirada, inicia sesión de nuevo", 401);
   }
