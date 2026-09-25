@@ -12,10 +12,52 @@ Antes de tocar código, lee también `rules.md` (reglas fijas) y `todo.md`
 
 ## Estado actual en una frase
 
-El código de **emparejamiento TOTP + POS backend/frontend está completo pero
-nunca se compiló ni se probó de punta a punta** — lo primero que debería hacer
-cualquier agente que retome esto es typecheck + una prueba real, no escribir
-features nuevas.
+El POS está **emparejado y validado de punta a punta contra un CRM en Docker**
+(2026-09-25): catálogo ↓, venta local, push → factura `issued` numerada en el
+CRM, idempotencia, offline sin pérdida, y desvinculación remota por socket.io.
+Quedan pendientes no-código: decisión de IVA en la caja, inventario/stock real,
+SRI, y el instalador/OS original.
+
+---
+
+## 2026-09-25 — Sesión: validación E2E POS ↔ CRM (Docker local)
+
+**Qué se hizo:** Se levantó `pos/backend` + `pos/frontend` en local sobre la BD
+`pos_db` (6 migraciones Prisma aplicadas, seed `admin`), se lo emparejó con el
+CRM mínimo en Docker mediante el código TOTP de 6 dígitos, y se probó de punta
+a punta. Detalle completo y evidencia en `VALIDACION-E2E.md`. El `todo.md` quedó
+marcado solo en lo validado.
+
+**Por qué:** era el pendiente número uno del traspaso — el código de
+emparejamiento y del POS estaba escrito pero **nunca compilado ni corrido**; no
+se sabía si el flujo funcionaba. Resultado: funciona.
+
+**Qué se encontró y qué se arregló (cambios pequeños, SIN commitear, para
+revisión del dueño):**
+- **A. `backend/src/sync/admin-client.ts` → `fetchRemoteProducts`**: `product-service`
+  pagina `GET /products` (`{ items, total, page, pageSize }`) pero el pull esperaba
+  array plano → el 1er pull bajaba **0 productos en silencio**. Fix: desempaquetar
+  `res.items`. `/categories`, `/users`, `/customers` sí son arrays planos.
+- **B. `frontend/src/components/CartPanel.vue`**: `vue-tsc --noEmit` no compilaba —
+  `@blur="setTimeout(...)"` en el template resuelve `setTimeout` contra la instancia
+  del componente. Fix: función `hideDropdownLater()` en `<script setup>`.
+
+**Qué queda como consecuencia (decisiones pendientes del dueño):**
+- **La caja no cobra IVA**: venta local 8.75 → factura 10.06 (+15% que aplica
+  billing). No es error de wiring: billing registra la diferencia en
+  `posTotalsDiffCents`. Decidir si la caja debe mandar `tax` e incluir IVA para que
+  `posTotalCents` coincida con el total de la factura.
+- **Stock no probado**: `inventory-service` no corre en el stack local; la validación
+  de stock en `sales.routes.ts` sigue deliberadamente deshabilitada (ver `todo.md`).
+- **SRI no probado**: `fiscal-ecuador` no corre; la factura queda en `issued`, nunca
+  se envía ni autoriza.
+- **El POINT_TYPE y el ruteo del hub**: la desvinculación remota funciona de verdad a
+  través de RabbitMQ (outbox-relay de org → exchange → consumidor del gateway → sala
+  `device:<deviceId>` del POS). Requiere `RABBITMQ_URL` seteado y RabbitMQ arriba.
+
+**Siguiente paso obligatorio:** revisión del dueño de los diffs A y B (no se
+commitearon), y luego decidir C (IVA en caja). Después se puede retomar el
+instalador/OS (parado en el TODO).
 
 ---
 

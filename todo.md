@@ -7,44 +7,39 @@ Marca con [x] cuando esté hecho Y validado (no solo escrito).
 
 - [ ] `git add -A && git commit -m "checkpoint"` en `cmr-proyect` (incluye
       `pos/`) — por seguridad ante agentes automáticos. Ver `rules.md` §8.
-- [ ] Reconstruir y migrar `organization-service` en Docker:
+- [x] Reconstruir y migrar `organization-service` en Docker (hecho en Docker local, fase 1):
   ```
   docker compose build organization-service
   docker compose run --rm organization-service npx sequelize-cli db:migrate
   docker compose up -d organization-service
   ```
-- [ ] Reconstruir `auth-service` en Docker (tiene el endpoint interno nuevo):
-  ```
-  docker compose build auth-service
-  docker compose up -d auth-service
-  ```
-- [ ] Reconstruir `api-gateway-node` (tiene la ruta pública nueva de pairing):
-  ```
-  docker compose build api-gateway-node
-  docker compose up -d api-gateway-node
-  ```
-- [ ] Confirmar que crear un punto de emisión tipo POS ahora sí devuelve
-      `type: "pos"` y `paired: false` en la respuesta.
+- [x] Reconstruir `auth-service` en Docker (endpoint interno nuevo): hecho en Docker local (fase 1)
+- [x] Reconstruir `api-gateway-node` (ruta pública nueva de pairing): hecho en Docker local (fase 1)
+- [x] Confirmar que crear un punto de emisión tipo POS ahora sí devuelve
+      `type: "pos"` y `paired: false` en la respuesta (validado vía respuestas de
+      `GET /billing-points?...` y del `unlink` en la prueba E2E)
 
 ## 🧪 Validación pendiente (código escrito, nunca compilado/probado)
 
 - [ ] `npm run typecheck` (o `tsc --noEmit`) real en `organization-service`
 - [ ] `npm run typecheck` real en `auth-service`
 - [ ] `vue-tsc --noEmit` real en el CRM frontend (`cmr-proyect/frontend`)
-- [ ] Migración de `pos/backend` (`npx prisma migrate dev`) — nunca corrida
-      contra una BD real
-- [ ] **Prueba end-to-end completa del emparejamiento**:
+- [x] Migración de `pos/backend` (`npx prisma migrate dev`) — corrida contra `pos_db`
+      real (2026-09-25): 6 migraciones aplicadas, 13 tablas; login + sync OK
+- [x] **Prueba end-to-end completa del emparejamiento** (2026-09-25, ver
+      `VALIDACION-E2E.md`; validado por API; el frontend se probó por contrato HTTP):
   1. Crear punto de emisión tipo POS en el CRM
   2. Ver el código de 6 dígitos
-  3. Levantar `pos/backend` + `pos/frontend` (`npm run dev` en ambos, o
-     `npm run tauri dev`)
-  4. Debería mostrar `/setup` pidiendo el código
-  5. Ingresar el código → debería emparejar y pasar al login de cajero
-  6. Confirmar que el catálogo (productos/categorías) se descarga solo
-  7. Hacer una venta, confirmar que queda en `sales` con `synced: false`
-     (esperado, porque billing-service no existe todavía)
-- [ ] Probar "Desvincular y regenerar" desde el CRM, y que el POS ya
-      desvinculado no pueda seguir sincronizando
+  3. Levantar `pos/backend` + `pos/frontend` (`npm run dev` en ambos)
+  4. `/setup` pide el código
+  5. Ingresar el código → empareja y pasa al login de cajero
+  6. El catálogo (productos/categorías) se descarga solo
+  7. Una venta queda en `sales` con `synced: false` y luego sube con `POST /sync/run`
+     (billing-service ya existe: la venta se convierte en factura `issued`, ver facturas
+     `001-002-000000001..003` creadas en la prueba)
+- [x] Probar "Desvincular y regenerar" desde el CRM, y que el POS ya
+      desvinculado no pueda seguir sincronizando (desvincula solo vía socket.io;
+      con `pos_config` vacío no sube ventas; re-empareja con código nuevo)
 
 ## 🟡 Falta programar — trabajo real, no solo config
 
@@ -63,13 +58,17 @@ Marca con [x] cuando esté hecho Y validado (no solo escrito).
       `tauri.conf.json`, y armar el servidor de `latest.json`
 - [ ] **Iconos de la app** (`src-tauri/icons/`) — vacío, generar con
       `npx tauri icon <logo.png>`
-- [ ] **billing-service** (en `cmr-proyect`, no en `pos/`) — hasta que no
-      exista, `push.ts` seguirá sin poder subir ventas de verdad. Cuando se
-      construya, hay que:
-  - [ ] Definir el endpoint real de ingesta (hoy `pos/backend` apunta a un
-        placeholder: `POST /invoices/from-pos`)
-  - [ ] Actualizar `pos/backend/src/sync/admin-client.ts` con la forma real
-        del payload que espere ese endpoint
+- [x] **billing-service** existe y está desplegado desde el 2026-09-04.
+      `POST /invoices/from-pos` ya es un endpoint real (2026-09-15): convierte
+      la venta en factura EMITIDA, es idempotente por (terminalId, posSaleId) y
+      recalcula los totales desde el catálogo. `admin-client.ts` y `push.ts` ya
+      mandan el contrato real (deviceId como terminal, punto de emisión del
+      emparejamiento, cliente del CRM o CONSUMIDOR FINAL).
+  - [x] **Probado de verdad** (2026-09-25): venta de punta a punta contra el
+        CRM con la factura numerada en el CRM (`001-002-000000001..003`) y la
+        venta marcada `synced`. **Stock descontado en inventario: NO probado**
+        (inventory-service no corre en el stack local). Idempotencia y offline
+        validados — ver `VALIDACION-E2E.md`.
 - [ ] **Catálogo de permisos para terminales POS** — hoy usa el rol
       "Administrador" completo a propósito ("por ahora todos pueden entrar").
       Cuando se defina qué permisos necesita realmente un POS
@@ -77,10 +76,11 @@ Marca con [x] cuando esté hecho Y validado (no solo escrito).
   - [ ] Crear el rol específico en `auth-service`
   - [ ] Cambiar `provision-service-account.ts` para asignar ese rol en vez de
         "Administrador"
-- [ ] **Inventario real** — cuando exista `inventory-service` (o se agregue
-      stock a `product-service`), reintroducir la validación de stock en
-      `pos/backend/src/routes/sales.routes.ts` (hoy deliberadamente
-      deshabilitada)
+- [ ] **Inventario real** — `inventory-service` ya está desplegado
+      (2026-09-15) y descuenta stock al emitirse la factura. Falta reintroducir
+      la validación de stock en `pos/backend/src/routes/sales.routes.ts` (hoy
+      deliberadamente deshabilitada), decidiendo antes qué hace la caja cuando
+      está offline y no puede consultar el stock del CRM.
 
 ## 🟢 Hecho (escrito, revisar contra la validación pendiente arriba)
 
@@ -103,8 +103,8 @@ Marca con [x] cuando esté hecho Y validado (no solo escrito).
 
 ## Preguntas abiertas (no técnicas, decisión del dueño del proyecto)
 
-- ¿Cuándo se construye `billing-service`? Bloquea la sincronización real de
-  ventas.
+- ¿La caja puede vender sin stock suficiente? Hoy vende siempre; inventario ya
+  avisa de existencias en negativo, pero nadie bloquea la venta.
 - ¿El instalador/OS sigue siendo prioridad, o el foco ahora es terminar de
   validar/probar el POS + CRM tal como están?
 - ¿Un solo POS por punto de emisión, o eventualmente varios dispositivos
