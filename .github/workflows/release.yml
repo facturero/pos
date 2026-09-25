@@ -1,0 +1,58 @@
+name: Release POS
+
+# Publica la capa de aplicación firmada en GitHub Releases cuando el dueño
+# crea una etiqueta vX.Y.Z. El manifiesto `latest.json` y el paquete
+# `facturero-pos-<v>.tar.gz` quedan en la Release; `releases/latest` resuelve
+# siempre a la última (ignora borradores y prerelease), que es la URL fija que
+# consultan los equipos instalados.
+#
+# La clave PRIVADA de firma nunca existe en el repo: viaja como secreto
+# RELEASE_SIGNING_KEY (la escribe el workflow en un archivo temporal y no se
+# imprime). La PÚBLICA sí está versionada en os/release/release-public.pem.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Escribir clave privada a un archivo temporal
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          if [ -z "$RELEASE_SIGNING_KEY" ]; then
+            echo "Falta el secreto RELEASE_SIGNING_KEY (clave privada de firma)." >&2
+            exit 1
+          fi
+          printf '%s' "$RELEASE_SIGNING_KEY" > /tmp/release-private.pem
+          chmod 600 /tmp/release-private.pem
+
+      - name: Construir, firmar y empaquetar
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          os/release/build-release.sh \
+            --version "$VERSION" \
+            --out dist-release \
+            --key /tmp/release-private.pem \
+            --url-base "https://github.com/facturero/pos/releases/download/${GITHUB_REF_NAME}"
+
+      - name: Subir el paquete y el manifiesto a la Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" \
+            "dist-release/facturero-pos-${VERSION}.tar.gz" \
+            dist-release/latest.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "POS ${GITHUB_REF_NAME}" \
+            --notes "Capa de aplicación firmada ${VERSION}. El primer arranque baja este paquete y lo instala el actualizador."
