@@ -1,0 +1,14 @@
+[Unit]
+Description=Ejecuta el actualizador de la capa de aplicación una vez por hora
+# OnBootSec + RandomizedDelaySec: arranca al encender pero esparcido (los
+# equipos no golpean GitHub Releases todos a la vez). Persistent recupera
+# corridas perdidas con el equipo apagado.
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=Facturero POS — actualizador de la capa de aplicación
+# Lo invoca el timer (cada hora) o install.sh para la primera instalación.
+After=network-online.target mysql.service
+Wants=mysql.service
+
+[Service]
+Type=oneshot
+User=facturero
+Group=facturero
+EnvironmentFile=-/etc/facturero/pos.env
+Environment=PATH=__NODE_DIR__/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=__NODE_DIR__/bin/node /opt/facturero/update-cli/cli.mjs /etc/facturero/updater.json
+# Códigos del actualizador: 0 al día/actualizado, 2 rollback y 3 bloqueado por
+# otra corrida NO son fallos para systemd (el rollback es una decisión sana).
+SuccessExitStatus=0 2 3

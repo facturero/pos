@@ -1,0 +1,10 @@
+{
+  "root": "/opt/facturero",
+  "manifestUrl": "https://github.com/facturero/pos/releases/latest/download/latest.json",
+  "publicKeyFile": "/etc/facturero/release-public.pem",
+  "migrateCmd": "cd \"$RELEASE_DIR/backend\" && ./node_modules/.bin/prisma migrate deploy",
+  "restartCmd": "sudo __SYSTEMCTL__ restart facturero-backend || sudo __SYSTEMCTL__ start facturero-backend",
+  "healthUrl": "http://127.0.0.1:4000/health",
+  "healthTimeoutMs": 90000,
+  "keepReleases": 3
+}

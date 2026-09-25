@@ -1,0 +1,20 @@
+[Unit]
+Description=Facturero POS — backend de la capa de aplicación
+# __NODE_DIR__/bin lo sustituye install.sh por el Node fijado.
+After=network-online.target mysql.service
+Wants=mysql.service
+
+[Service]
+Type=simple
+User=facturero
+Group=facturero
+WorkingDirectory=/opt/facturero/current/backend
+EnvironmentFile=-/etc/facturero/pos.env
+Environment=PATH=__NODE_DIR__/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=__NODE_DIR__/bin/node dist/index.js
+Restart=always
+RestartSec=3
+# la app solo tira cuando MySQL está; el After/Wants ya lo cubren
+
+[Install]
+WantedBy=multi-user.target
