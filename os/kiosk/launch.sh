@@ -32,6 +32,10 @@ if [[ "${KIOSK_HIDE_CURSOR:-0}" == "1" ]]; then
   xsetroot -cursor "$OS_DIR/kiosk/empty.xbm" "$OS_DIR/kiosk/empty.xbm" >/dev/null 2>&1 || true
 fi
 
+if [[ ! -x "$APP_BIN" ]]; then
+  log "no existe la ventana ($APP_BIN): falta instalar el binario de Tauri; no reintento"
+  exit 1
+fi
 log "arrancando la ventana ($APP_BIN)"
 while :; do
   "$APP_BIN" >> "$LOG" 2>&1

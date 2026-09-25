@@ -64,7 +64,7 @@ apt-get install -y --no-install-recommends \
   unattended-upgrades \
   libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1 librsvg2-common \
   libsoup-3.0-0 libjavascriptcoregtk-4.1-0 \
-  xorg openbox
+  xorg xinit x11-xserver-utils openbox
 
 # --- usuario facturero -------------------------------------------------------
 
@@ -85,9 +85,16 @@ if [[ ! -x "$NODE_BIN" ]]; then
   trap 'rm -rf "$tmp"' RETURN
   curl -fsSL -o "$tmp/$NODE_TARBALL" "$NODE_URL"
   curl -fsSL -o "$tmp/SHASUMS256.txt" "$NODE_SHASUM_URL"
-  # la línea del tarball termina con la ruta exacta del archivo a validar
-  ( cd "$tmp" && grep -F " $NODE_TARBALL$" SHASUMS256.txt | sha256sum -c --ignore-missing )
-  tar -C "$RUNTIME" -xJf "$tmp/$NODE_TARBALL"
+  # SHASUMS256.txt: "<sha256>  <archivo>". La linea EXACTA del tarball se saca con awk: el
+  # `grep -F " $NODE_TARBALL$"` anterior no entendia el `$` final, no encontraba nada y
+  # sha256sum fallaba con "no properly formatted checksum lines".
+  line="$(awk -v f="$NODE_TARBALL" '$2==f' "$tmp/SHASUMS256.txt")"
+  [[ -n "$line" ]] || die "SHASUMS256.txt no trae $NODE_TARBALL"
+  ( cd "$tmp" && echo "$line" | sha256sum -c - )
+  # el tarball trae node-v<ver>-linux-x64/: se aplana en node-<ver> (que es lo que esperan
+  # NODE_DIR y las unidades systemd; sin esto "bin/node: No such file or directory")
+  rm -rf "$NODE_DIR"; mkdir -p "$NODE_DIR"
+  tar -C "$NODE_DIR" --strip-components=1 -xJf "$tmp/$NODE_TARBALL"
   "$NODE_BIN" --version >/dev/null
 else
   log "Node ya instalado en $NODE_DIR"
@@ -113,7 +120,11 @@ fi
 # --- secretos y pos.env ------------------------------------------------------
 
 mkdir -p "$ETC"
-chmod 700 "$ETC"
+# root:facturero 750: el actualizador corre como `facturero` y tiene que poder entrar a leer
+# updater.json y la clave pública (con 700 fallaba con EACCES). Los secretos siguen protegidos:
+# pos.env es 600 root y lo lee systemd (EnvironmentFile), no el proceso.
+chown root:"$FACTURERO_USER" "$ETC"
+chmod 750 "$ETC"
 
 if [[ -f "$ETC/pos.env" ]]; then
   # no regenerar secretos: la contraseña y JWT_SEcret viven SOLO en pos.env
@@ -196,7 +207,10 @@ systemctl enable mysql.service facturero-backend.service facturero-updater.timer
 
 # --- primera versión de la capa de aplicación --------------------------------
 
-CURRENT="$(readlink -f "$FACTURERO_APP/current" 2>/dev/null || true)"
+# OJO: `readlink -f` sobre una ruta que no existe devuelve la propia ruta (no vacío), asi que
+# "hay versión activa" se decide con -L (enlace existente), no con la salida de readlink.
+CURRENT=""
+[[ -L "$FACTURERO_APP/current" ]] && CURRENT="$(readlink -f "$FACTURERO_APP/current")"
 if [[ -z "$CURRENT" ]]; then
   log "primera instalación de la capa de aplicación (actualizador)..."
   # se dispara por systemd y no con `su`: el servicio aporta EnvironmentFile=pos.env
@@ -226,4 +240,7 @@ if [[ -n "$ALLOW_SSH_FROM" ]]; then
 fi
 ufw --force enable
 
-log "LISTO — panel en http://127.0.0.1:4000 ; /health responde $(curl -fsS "$HEALTH_URL")"
+# Si el backend no responde, la instalación NO está lista: fallar aquí evita que firstboot.sh
+# se marque como terminado (y desactive) con un equipo sin aplicación.
+HEALTH_BODY="$(curl -fsS "$HEALTH_URL")" || die "el backend no responde en $HEALTH_URL"
+log "LISTO — panel en http://127.0.0.1:4000 ; /health responde $HEALTH_BODY"
