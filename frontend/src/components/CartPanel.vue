@@ -48,6 +48,14 @@ function selectCustomer(c: Customer) {
 function clearCustomer() {
   cart.setCustomer(null);
 }
+
+// El @blur del input de cliente cierra el dropdown con un pequeño retraso para
+// que el @mousedown.prevent del resultado tenga tiempo de ejecutarse antes.
+function hideDropdownLater() {
+  window.setTimeout(() => {
+    showDropdown.value = false;
+  }, 200);
+}
 </script>
 
 <template>
@@ -83,7 +91,7 @@ function clearCustomer() {
           placeholder="Buscar cliente (nombre, RUC, email)..."
           class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500"
           @focus="showDropdown = customerResults.length > 0"
-          @blur="setTimeout(() => showDropdown = false, 200)"
+          @blur="hideDropdownLater"
         />
         <div v-if="showDropdown" class="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
           <button
