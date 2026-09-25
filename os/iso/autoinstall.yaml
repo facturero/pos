@@ -14,25 +14,23 @@ autoinstall:
   identity:
     hostname: __HOSTNAME__
     username: taller
-    # sin contraseña de login: el acceso técnico es SOLO por SSH con clave
-    # (recuadro ssh abajo) desde la red de administración
-    password: null
+    # Contrasena BLOQUEADA ("!"): nadie puede entrar con clave escrita. subiquity exige el campo
+    # y "password: null" da "Malformed autoinstall in identity section". El acceso tecnico es
+    # SOLO por SSH con clave (ssh.authorized-keys), desde la red de administracion.
+    password: "!"
   ssh:
     install-server: true
     allow-pw: false
+    authorized-keys:
+      - __SSH_PUB_KEY__
   storage:
     layout:
       name: lvm
-  user-data:
-    # cloud-config extra que subiquity fusiona: añade la clave SSH al usuario
-    # técnico `taller` (la clave de la llave es el parámetro de build-iso.sh)
-    users:
-      - name: taller
-        groups: [sudo]
-        shell: /bin/bash
-        ssh_authorized_keys:
-          - __SSH_PUB_KEY__
   late-commands:
+    # 0) el técnico entra solo por SSH con clave (contraseña bloqueada), así que sudo no puede pedir
+    #    contraseña: sin esto no podría administrar el equipo. Está limitado por la red de admin (ufw).
+    - echo "taller ALL=(ALL) NOPASSWD:ALL" > /target/etc/sudoers.d/90-taller
+    - chmod 440 /target/etc/sudoers.d/90-taller
     # Se ejecutan en el entorno vivo, con la raíz instalada en /target
     # 1) los scripts del OS viajan en la ISO bajo /cdrom/pos-os
     - mkdir -p /target/opt/facturero

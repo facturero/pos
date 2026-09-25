@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Remasteriza la ISO de Ubuntu Server 24.04 LTS para instalar el Facturero de
-# forma desatendida. Corre en una máquina Ubuntu/Linux del dueño (en la de
-# desarrollo es Windows y no se ejecuta aquí). Requiere xorriso y la ISO base
-# (la descarga la hace el dueño; la autorización la da él en el reporte).
+# forma desatendida. Corre en una máquina Ubuntu/Linux (en la de desarrollo es
+# Windows y no se ejecuta aquí; se prueba por contenedor).
+# Requiere xorriso (en Ubuntu: sudo apt-get install -y xorriso).
 #
 #   ./build-iso.sh ubuntu-24.04.X-live-server-amd64.iso [WORK] [OUT]
 #
@@ -11,7 +11,8 @@
 #   SSH_ALLOW_FROM       CIDR de la red de administración (vacío = sin SSH)
 #   SSH_AUTHORIZED_KEY   clave pública del técnico (obligatoria)
 #   HOSTNAME_OS          hostname (por defecto facturero-pos)
-# Se pueden pasar como variables de entorno o dejarlas en iso/iso-params.example
+#   MANIFEST_URL         dónde consulta actualizaciones (por defecto GitHub Releases de facturero/pos)
+#   RELEASE_PUBLIC_KEY   clave pública de firma (por defecto la de os/release/)
 set -euo pipefail
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -32,15 +33,14 @@ SSH_AUTHORIZED_KEY=${SSH_AUTHORIZED_KEY:-}
 # Repositorio de actualizaciones que llevará la ISO. Para pruebas sin publicar
 # nada, apuntar a un servidor local (p. ej. MANIFEST_URL=http://host:PORT/latest.json)
 # con un paquete firmado por la misma clave pública que se inyecta abajo.
-MANIFEST_URL=${MANIFEST_URL:-https://github.com/facturero/pos/releases/latest/download/latest.json}
+DEFAULT_MANIFEST_URL=https://github.com/facturero/pos/releases/latest/download/latest.json
+MANIFEST_URL=${MANIFEST_URL:-$DEFAULT_MANIFEST_URL}
 # Clave PÚBLICA a incorporar al equipo (si se omite, la del repo os/release/).
 RELEASE_PUBLIC_KEY=${RELEASE_PUBLIC_KEY:-}
 
-echo "== extrayendo la ISO base =="
-rm -rf "$WORK"; mkdir -p "$WORK/iso"
-xorriso -osirrox on -indev "$ISO" -extract / "$WORK/iso" >/dev/null
-
-echo "== copiando os/ a la ISO (pos-os) =="
+echo "== preparando lo que se añade a la ISO =="
+rm -rf "$WORK/iso"; mkdir -p "$WORK/iso/boot/grub"
+# El árbol pos-os viaja en la ISO (instalador, actualizador, kiosco, clave pública).
 cp -ra "$SRC" "$WORK/iso/pos-os"
 
 echo "== sustituyendo placeholders en autoinstall.yaml e iso-params.env =="
@@ -53,44 +53,46 @@ sed -e "s|__ADMIN_API_BASE__|${ADMIN_API_BASE_URL}|" \
     "$SRC/iso/iso-params.example" > "$WORK/iso/iso-params.env"
 
 echo "== parametrizando MANIFEST_URL y la clave pública del equipo =="
-if [[ -n "$MANIFEST_URL" && "$MANIFEST_URL" != "https://github.com/facturero/pos/releases/latest/download/latest.json" ]]; then
-  sed -i "s|https://github.com/facturero/pos/releases/latest/download/latest.json|${MANIFEST_URL}|" \
-    "$WORK/iso/pos-os/provision/updater.json"
+if [[ "$MANIFEST_URL" != "$DEFAULT_MANIFEST_URL" ]]; then
+  sed -i "s|${DEFAULT_MANIFEST_URL}|${MANIFEST_URL}|" "$WORK/iso/pos-os/provision/updater.json"
 fi
 if [[ -n "$RELEASE_PUBLIC_KEY" ]]; then
   [[ -f "$RELEASE_PUBLIC_KEY" ]] || die "no existe la clave pública: $RELEASE_PUBLIC_KEY"
   cp -f "$RELEASE_PUBLIC_KEY" "$WORK/iso/pos-os/release/release-public.pem"
 fi
+[[ -f "$WORK/iso/pos-os/release/release-public.pem" ]] || die "falta la clave pública (RELEASE_PUBLIC_KEY o os/release/release-public.pem)"
 
-echo "== inyectando la entrada de grub (también vale para EFI: el grub EFI de
-   la ISO hace configfile del mismo grub.cfg) =="
-# índice (0-based) de nuestra entrada = número de menuentries previas
-GRUB_IDX=$(grep -c '^menuentry ' "$WORK/iso/boot/grub/grub.cfg")
+echo "== inyectando la entrada de grub (BIOS y EFI usan el mismo grub.cfg) =="
+xorriso -osirrox on -indev "$ISO" -extract /boot/grub/grub.cfg "$WORK/iso/boot/grub/grub.cfg" >/dev/null 2>&1
+chmod u+rw "$WORK/iso/boot/grub/grub.cfg"
 cat >> "$WORK/iso/boot/grub/grub.cfg" <<'EOF'
 
-menuentry "Instalar Facturero (desatendida) — autoinstall" {
+menuentry "Instalar Facturero (desatendida) — autoinstall" --id facturero-auto {
     linux /casper/vmlinuz autoinstall ds=nocloud\;s=/cdrom/ quiet ---
     initrd /casper/initrd
 }
 EOF
-# la instalación arranca sola a los 5 s (default + timeout al final del cfg)
+# La entrada por defecto se elige por ID, NO por índice: parte de las entradas del grub.cfg original
+# están dentro de `if` (EFI o BIOS) y el índice cambia según la plataforma; un índice fuera de rango
+# cae en la entrada 0 (instalación normal, que pide confirmación). La instalación arranca sola a los 5 s.
 cat >> "$WORK/iso/boot/grub/grub.cfg" <<EOF
 
-set default=${GRUB_IDX}
+set default=facturero-auto
 set timeout=5
 EOF
 
-echo "== reconstruyendo la ISO ($OUT) =="
-xorriso -as mkisofs -o "$OUT" \
-  -V "Ubuntu 24.04 LTS FACTURERO" \
-  -J -joliet-long -cache-inodes -iso-level 3 \
-  -partition_offset 16 \
-  -A "Ubuntu 24.04 LTS server autoinstall" \
-  -b boot/grub/i386-pc/eltorito.img -c boot.catalog -no-emul-boot \
-  -boot-load-size 4 -boot-info-table \
-  -eltorito-alt-boot -e boot/grub/efi.img -no-emul-boot \
-  -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
-  "$WORK/iso"
+# Se reescribe la ISO base con "-boot_image any replay": xorriso conserva EXACTAMENTE el arranque
+# original (MBR de grub, El Torito BIOS y la partición EFI añadida al final). En las ISOs de
+# 24.04.x el EFI ya no es un archivo boot/grub/efi.img como antes, así que reconstruir con
+# "mkisofs -e boot/grub/efi.img" falla ("Cannot find path").
+echo "== escribiendo la ISO ($OUT) =="
+rm -f "$OUT"
+xorriso -indev "$ISO" -outdev "$OUT" -boot_image any replay \
+  -map "$WORK/iso/pos-os" /pos-os \
+  -map "$WORK/iso/autoinstall.yaml" /autoinstall.yaml \
+  -map "$WORK/iso/iso-params.env" /iso-params.env \
+  -map "$WORK/iso/boot/grub/grub.cfg" /boot/grub/grub.cfg \
+  -commit
 
 echo "== lista: $OUT =="
 echo "Pruébala primero en VirtualBox: arranque -> instalación desatendida ->"

@@ -8,4 +8,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/bin/bash /opt/facturero/os-src/iso/firstboot.sh
-TimeoutStartSec=1800
+# Sin limite: la primera provision baja cientos de MB y en hardware lento (o red lenta) supera con
+# facilidad los 30 min (en la VM de prueba, MySQL tardo 10 min solo en inicializarse). Si algo se
+# cuelga de verdad, se ve en /var/log/facturero-firstboot.log.
+TimeoutStartSec=infinity

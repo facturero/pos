@@ -8,7 +8,10 @@
 # SSH_ALLOW_FROM: red de administración (CIDR) desde la que se autoriza SSH
 # de servicio. Vacío = ufw niega todo lo entrante.
 # SSH_AUTHORIZED_KEY: clave pública del técnico (sin comentarios).
+# Los valores van ENTRE COMILLAS: firstboot.sh lee este archivo con `.` (bash) y una clave SSH
+# lleva espacios; sin comillas bash intentaba ejecutar la parte base64 como un comando.
 
-ADMIN_API_BASE_URL=__ADMIN_API_BASE__
-SSH_ALLOW_FROM=__SSH_ALLOW_FROM__
-SSH_AUTHORIZED_KEY=__SSH_AUTHORIZED_KEY__
+
+ADMIN_API_BASE_URL="__ADMIN_API_BASE__"
+SSH_ALLOW_FROM="__SSH_ALLOW_FROM__"
+SSH_AUTHORIZED_KEY="__SSH_AUTHORIZED_KEY__"
