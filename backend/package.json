@@ -34,10 +34,5 @@
     "@types/node-cron": "^3.0.11",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
-  },
-  "allowScripts": {
-    "argon2@0.45.1": true,
-    "esbuild@0.28.1": true,
-    "prisma@5.22.0": true
   }
 }
