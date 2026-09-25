@@ -1,0 +1,4 @@
+# Los scripts y archivos de os/ corren en Linux (systemd, bash, cloud-init): con core.autocrlf=true
+# (Windows) un checkout los dejaba con CRLF y bash fallaba con ": command not found".
+os/** text eol=lf
+*.sh text eol=lf
