@@ -22,6 +22,23 @@ Pendientes no-código: decisión de IVA en la caja y stock real.
 
 ---
 
+## 2026-09-25 — Sesión: Fase 4 del OS — aprovisionamiento de Ubuntu
+
+**Qué se hizo:** `os/provision/` completo:
+- `install.sh` **idempotente** (`sudo bash os/provision/install.sh [--admin-api-base URL] [--country-code CC]`; argumentos desconocidos → error): usuario system `facturero`; Node **22.14.0 fijado** en `/opt/facturero/runtime/` descargado de nodejs.org y **verificado por SHA256** contra `SHASUMS256.txt`; MySQL con drop-in `bind-address = 127.0.0.1`, base `pos_db` utf8mb4 y usuario `facturero`@`127.0.0.1` con contraseña aleatoria que **solo** existe en `/etc/facturero/pos.env` (0600) (si `pos.env` ya existe, no la regenera); `pos.env` con `NODE_ENV/PORT/DATABASE_URL/JWT_SECRET/POS_FRONTEND_DIST/POS_IMAGES_DIR/POS_COUNTRY_CODE` y `ADMIN_API_BASE_URL` **solo si se pasa `--admin-api-base`** (sin default escrito); `updater.json` 0640 root:facturero con la ruta de systemctl plantillada (`__SYSTEMCTL__`, la misma que la regla de sudoers — sudo exige path exacto); copia de la actualizador (`update-cli/`) y de la clave pública; unidades `facturero-backend.service`, `facturero-updater.service` (oneshot, `SuccessExitStatus=0 2 3` → rollback/bloqueo no son fallos) y `facturero-updater.timer` (`OnBootSec` 5 min + `RandomizedDelaySec` 10 min + `Persistent`); sudoers mínima `NOPASSWD` restart/start del backend; ufw denegando todo lo entrante; y **primera instalación vía `systemctl start facturero-updater.service`** (la unidad da el `EnvironmentFile` que requiere `prisma migrate deploy`; con `su` no habría `DATABASE_URL`).
+- `units/*` como plantillas con `__NODE_DIR__` que `install.sh` sustituye.
+- `updater.json`: `manifestUrl` = `releases/latest/download/latest.json`, `migrateCmd` = `cd "$RELEASE_DIR/backend" && ./node_modules/.bin/prisma migrate deploy`, `restartCmd` con rama `|| systemctl start` para el primer arranque (la unidad aún no está levantada), `healthTimeoutMs 90000`.
+
+**Por qué:** el SO lleva Node fijado (el de apt cambia de versión y puede romper el runtime); solo la salida de red (regla 5); el actualizador debe poder reiniciar el backend sin pedir contraseña (desatendido); la primera versión la mete el **mismo** mecanismo de actualización para que el camino sea único.
+
+**Verificación:** `bash -n` OK (Git Bash); JSON validado con `node -e require(...)`; sustitución de `__NODE_DIR__`/`__SYSTEMCTL__` simulada y revisada (unidades y `updater.json` finales correctos). **NO se pudo probar** (requiere Linux real / VM autorizada por el dueño): apt, arranque de MySQL con socket root, `systemctl` real y `systemd-analyze verify`, `sudoers`/`visudo -c -f`, `ufw`, migración contra el MySQL del sistema, primer arranque del backend como `facturero`, y el flujo completo update→restart→health/rollback en systemd.
+
+**Notable:** `current` no existe hasta que el actualizador corre la primera vez; el `IF` del script distingue "primera instalación" de "ya hay versión activa". `migrateCmd` asume cwd=RELEASE_DIR y `DATABASE_URL` en el entorno de la unidad.
+
+**Siguiente paso:** fase 5 (kiosco: autologin, Openbox, ventana Tauri, bloqueo de atajos/TTY, auto-reinicio) — escribir `os/kiosk/` y validar estáticamente; prueba real en la VM.
+
+---
+
 ## 2026-09-25 — Sesión: Fase 3b del OS — CI de publicación en GitHub Releases
 
 **Qué se hizo:** `pos/.github/workflows/release.yml`. Al empujar una etiqueta

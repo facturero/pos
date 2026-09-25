@@ -20,11 +20,15 @@ todo se mueve junto y se puede volver atrás.
 ```
 /opt/facturero/
   runtime/node-<v>/        Node fijado (no el de apt)
+  update-cli/              el actualizador instalado (os/updater copiado por install.sh)
   releases/<versión>/      backend/dist, backend/node_modules (solo producción), backend/prisma,
                            frontend/dist, VERSION
+  downloads/               paquetes .tar.gz descargados (los crea el actualizador)
   current -> releases/X    la versión que corre
   state.json               versión previa y versiones que fallaron (no se reintentan)
+  updater.lock             candado del actualizador (no correr dos a la vez)
 /etc/facturero/
+  pos.env                  secretos y configuración del backend (0600, root; lo consume systemd)
   updater.json             URL del manifiesto, comandos de migrar/reiniciar, URL de salud
   release-public.pem       clave PÚBLICA que verifica cada actualización
 /var/lib/facturero/        datos del POS (imágenes descargadas, etc.)
@@ -50,6 +54,22 @@ MySQL local                base pos_db (solo escucha en 127.0.0.1)
 **No probado todavía:** nada de lo que necesita Linux real (systemd, Openbox, autoinstall, MySQL del
 sistema). Las pruebas del actualizador usan carpetas temporales y comandos de mentira.
 
+- **Fase 4 (`os/provision/install.sh` + plantillas)**: aprovisiona el equipo de forma idempotente:
+  usuario system `facturero`; Node 22.14.0 fijado en `/opt/facturero/runtime/` bajado de nodejs.org
+  con **verificación SHA256** contra `SHASUMS256.txt` (no el node de apt); MySQL solo en `127.0.0.1`
+  (drop-in `bind-address`), base `pos_db` y usuario `facturero` con contraseña aleatoria que solo
+  vive en `/etc/facturero/pos.env` (0600; systemd la inyecta vía `EnvironmentFile`); `pos.env` con
+  `DATABASE_URL`, `JWT_SECRET`, `PORT=4000`, rutas de pantalla e imágenes (y `ADMIN_API_BASE_URL`
+  solo si se pasó `--admin-api-base`); unidades `facturero-backend.service` (Restart=always) y
+  `facturero-updater.service` + `.timer` (cada hora, `OnBootSec` 5 min + `RandomizedDelaySec` 10 min,
+  `Persistent`); sudoers mínima (`NOPASSWD: systemctl restart/start facturero-backend`, ruta exacta
+  detectada con `command -v` y la misma ruta plantillada en `updater.json` con `__SYSTEMCTL__`);
+  copia la clave pública a `/etc/facturero/release-public.pem`; ufw con todo lo entrante denegado; y
+  la **primera versión de la app se baja con el propio actualizador** lanzado por systemd (no `su`:
+  la unidad aporta el `EnvironmentFile` que necesita `prisma migrate deploy`). `migrateCmd` corre
+  `prisma migrate deploy` desde `$RELEASE_DIR/backend`; `restartCmd` tolera el primer arranque
+  (cuando la unidad aún no está levantada, `systemctl start` como rama del `||`).
+
 ## Reglas que salen de este diseño
 
 1. **Migraciones solo hacia adelante y compatibles hacia atrás.** Si una versión nueva falla y se
@@ -70,7 +90,7 @@ sistema). Las pruebas del actualizador usan carpetas temporales y comandos de me
 | 2 | Pantalla servida por el backend + `/health` + `binaryTargets` de Prisma | cambios en `pos/backend` y `pos/frontend` | ✅ hecho y probado en modo producción de `:4000` |
 | 3 | Script de construcción de la versión (Linux/Docker) | `os/release/build-release.sh`: compila, instala deps de producción, arma la carpeta que consume `sign-release` | ✅ hecho y probado (build + firma + smoke) |
 | 3b | CI de publicación en GitHub Releases | `.github/workflows/release.yml`: construye al crear `vX.Y.Z`, firma con `RELEASE_SIGNING_KEY` y sube `latest.json` + `.tar.gz` con `gh release create` | ✅ escrito y validado (YAML); **sin ejecutar** |
-| 4 | Aprovisionamiento de Ubuntu (`install.sh`): MySQL, Node fijado, usuario `facturero`, unidades systemd (backend + timer del actualizador), cortafuegos | `os/provision/` | pendiente — **se prueba en VirtualBox** |
+| 4 | Aprovisionamiento de Ubuntu (`install.sh`): MySQL, Node fijado, usuario `facturero`, unidades systemd (backend + timer del actualizador), cortafuegos | `os/provision/` | ✅ escrito (`install.sh` + unidades + `updater.json`); **sin probar — VirtualBox** |
 | 5 | Modo kiosco: autologin, Openbox arrancando la ventana, sin TTY ni atajos, reinicio automático si la ventana se cierra | `os/kiosk/` | pendiente — VM |
 | 6 | Instalación desatendida: `autoinstall.yaml` (cloud-init) y remasterizado de la ISO | `os/iso/` | pendiente — necesita la ISO de Ubuntu Server 24.04 |
 | 7 | Publicación en **GitHub Releases** de `facturero/pos` (repo público) + CI que firma y publica al crear una etiqueta `vX.Y.Z` | `.github/workflows/release.yml` | decidido; pendiente de escribir (ver HANDOFF-pos-os.md) |
