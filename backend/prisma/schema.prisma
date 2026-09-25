@@ -7,7 +7,11 @@
 // de la app, no dependen de reinstalar el sistema operativo.
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // El paquete se arma en Windows (aqui) o en Docker linux, pero corre en un
+  // Ubuntu 24.04 con OpenSSL 3: sin este target el cliente genera con el motor
+  // equivocado al instalar con `npm ci --omit=dev` en la maquina destino.
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {

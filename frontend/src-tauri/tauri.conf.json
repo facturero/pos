@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "url": "http://127.0.0.1:4000",
         "title": "POS",
         "width": 1280,
         "height": 800,
@@ -22,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:4000 ipc: http://ipc.localhost"
+      "csp": "default-src 'self'; connect-src 'self' ws://127.0.0.1:4000 ipc: http://ipc.localhost"
     }
   },
   "bundle": {

@@ -1,11 +1,15 @@
 import { createServer } from "node:http";
 import type { Server as HttpServer } from "node:http";
+import type { ServerType } from "@hono/node-server";
 import { Server } from "socket.io";
 import type { SyncState } from "../sync/status.js";
 
 // Canal de tiempo real LOCAL entre el frontend y este backend del POS.
-// Vive en un puerto propio (LOCAL_SOCKET_PORT, por defecto 4001) y en un http
-// server aparte para no chocar con el request-handler de Hono del puerto 4000.
+// En desarrollo vive en un puerto propio (LOCAL_SOCKET_PORT, por defecto 4001)
+// y en un http server aparte para no chocar con el request-handler de Hono del
+// puerto 4000. En producción, cuando el backend sirve la pantalla
+// (POS_FRONTEND_DIST definido), se monta sobre el MISMO server (index.ts le
+// pasa el objeto) para que webview y socket compartan origen.
 //
 // Sustituye los polling del frontend:
 //  - `unlinked`   -> cuando el admin desvincula el punto de emisión (el hub
@@ -19,8 +23,21 @@ const PORT = Number(process.env.LOCAL_SOCKET_PORT ?? 4001);
 
 let io: Server | null = null;
 
-export function startLocalSocket(): void {
+export function startLocalSocket(options?: { server?: ServerType }): void {
   if (io) return;
+
+  if (options?.server) {
+    // En este despliegue el server es siempre plain http (localhost sin TLS);
+    // http2 nunca se usa, así que el cast es solo para contentar a socket.io.
+    io = new Server(options.server as HttpServer, {
+      path: "/ws",
+      cors: { origin: "*" },
+    });
+    io.on("connection", () => {
+      console.log("[local-socket] frontend conectado");
+    });
+    return;
+  }
 
   const httpServer: HttpServer = createServer();
   io = new Server(httpServer, {

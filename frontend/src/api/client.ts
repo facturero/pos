@@ -1,4 +1,9 @@
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:4000";
+// En producción el backend sirve la pantalla compilada desde el MISMO origen
+// (:4000), así que las llamadas son relativas. En desarrollo el frontend
+// corre en Vite (1420) y la API en 4000, con VITE_API_BASE_URL para cambiarla.
+const BASE_URL = import.meta.env.PROD
+  ? ""
+  : (import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:4000");
 
 // Imagen de un producto ya descargada por el backend del POS (sin token: un <img> no puede mandarlo).
 export function productImageUrl(fileId: string): string {

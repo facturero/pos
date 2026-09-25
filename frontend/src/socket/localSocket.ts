@@ -1,12 +1,17 @@
 import { io, Socket } from "socket.io-client";
 
-// Canal de tiempo real con el backend local del POS (puerto LOCAL_SOCKET_PORT
-// del backend, por defecto 4001). Reemplaza los polling de /setup/status y
-// /sync/status: el backend empuja `unlinked` (desvinculación remota) y
-// `sync.status` (estado de la sincronización) y el frontend reacciona al
-// instante, sin consultar la API en bucle.
+// Canal de tiempo real con el backend local del POS. En desarrollo el socket
+// vive en LOCAL_SOCKET_PORT (4001), aparte del puerto 4000; en producción el
+// backend lo monta sobre su propio server, así que el frontend se conecta al
+// MISMO origen (URL vacía) y solo hace falta el path /ws.
+// Reemplaza los polling de /setup/status y /sync/status: el backend empuja
+// `unlinked` (desvinculación remota) y `sync.status` (estado de la
+// sincronización) y el frontend reacciona al instante, sin consultar la API
+// en bucle.
 
-const LOCAL_SOCKET_URL = import.meta.env.VITE_LOCAL_SOCKET_URL ?? "http://127.0.0.1:4001";
+const LOCAL_SOCKET_URL =
+  import.meta.env.VITE_LOCAL_SOCKET_URL ??
+  (import.meta.env.PROD ? "" : "http://127.0.0.1:4001");
 
 let socket: Socket | null = null;
 
