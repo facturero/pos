@@ -4,8 +4,6 @@
   "description": "Permisos base de la ventana principal del POS",
   "windows": ["main"],
   "permissions": [
-    "core:default",
-    "updater:default",
-    "process:default"
+    "core:default"
   ]
 }

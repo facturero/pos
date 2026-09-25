@@ -1,19 +1,12 @@
-// Punto de entrada nativo. Deliberadamente delgado: toda la lógica de
-// negocio vive en el backend Node (localhost:4000) y en el frontend Vue.
-// Este binario solo es el "shell" que aloja la webview + el auto-updater,
-// como el .exe de Discord.
+// Punto de entrada nativo. Deliberadamente delgado: toda la logica de negocio vive en el backend
+// Node (127.0.0.1:4000) y la pantalla la sirve ese mismo backend (ver tauri.conf.json -> app.windows.url).
+// Este binario solo aloja la webview en pantalla completa: por eso casi nunca cambia y forma parte de la
+// imagen del sistema operativo. NO lleva el plugin updater de Tauri: la aplicacion (backend + pantalla) se
+// actualiza con os/updater, que si puede actualizar el backend y sus migraciones.
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .setup(|_app| {
-            // Aquí, si hace falta, se podría lanzar/verificar el backend
-            // local como "sidecar" (ver tauri.conf.json -> bundle.externalBin)
-            // en vez de depender de que el usuario lo arranque a mano.
-            Ok(())
-        })
         .run(tauri::generate_context!())
         .expect("error corriendo la aplicación de Tauri");
 }

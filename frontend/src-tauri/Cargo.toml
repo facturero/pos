@@ -4,17 +4,11 @@ version = "0.1.0"
 description = "POS de escritorio (kiosco)"
 edition = "2021"
 
-[lib]
-name = "pos_app_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
-
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-tauri-plugin-updater = "2"
-tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
