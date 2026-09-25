@@ -241,7 +241,11 @@ export async function fetchRemoteProducts(establishmentId?: string): Promise<Rem
   const params = establishmentId
     ? `?status=active&establishmentId=${encodeURIComponent(establishmentId)}`
     : `?status=active`;
-  return request<RemoteProduct[]>(`/products${params}`);
+  // product-service pagina la lista (respuesta { items, total, page, pageSize });
+  // aquí solo importa la página actual (el catálogo de un establecimiento cabe
+  // holgadamente en el pageSize por defecto del servicio).
+  const res = await request<{ items: RemoteProduct[] }>(`/products${params}`);
+  return res.items;
 }
 
 export async function fetchRemoteCategories(): Promise<RemoteCategory[]> {
@@ -359,35 +363,43 @@ export async function validateRemoteCredentials(email: string, password: string)
   throw new AdminApiError(`auth/login respondió ${res.status}: ${body}`);
 }
 
-// NOTA: billing-service (donde vivirían las facturas/ventas) todavía no está
-// construido en el CRM — no hay endpoint real al que subir esto. Esta función
-// queda lista para cuando exista; hasta entonces, pushToAdmin() simplemente
-// fallará y las ventas quedarán en la cola local (sin pérdida de datos).
+// Ingesta de una venta en billing-service: la convierte en una FACTURA EMITIDA
+// (numerada por el punto de emisión con el que está emparejado este terminal),
+// lo que a su vez descuenta stock en inventario y dispara el envío al SRI.
+//
+// El contrato es idempotente por (terminalId, posSaleId): si se reintenta una
+// venta ya subida, billing responde 200 con la misma factura en vez de crear
+// otra. Por eso `terminalId` tiene que ser estable y único por equipo — se usa
+// el deviceId, que nace en el primer arranque y no cambia.
 export interface PushSalePayload {
   terminalId: string;
-  localSaleId: number;
-  cashierUsername: string;
-  subtotal: number;
-  tax: number;
-  discount: number;
-  total: number;
-  paymentMethod: string;
-  createdAt: string;
-  items: Array<{
-    productRemoteId: string | null;
-    sku: string | null;
-    name: string;
+  posSaleId: string;
+  establishmentId: string;
+  emissionPointId: string;
+  /** uuid del cliente en el CRM; sin él, billing factura a CONSUMIDOR FINAL. */
+  customerId?: string | null;
+  /** Total que calculó la caja, en centavos: billing lo contrasta con el suyo. */
+  posTotalCents: number;
+  lines: Array<{
+    productId: string;
+    description?: string;
     quantity: number;
-    unitPrice: number;
-    subtotal: number;
+    unitPrice: string;
+    discountCents?: number;
   }>;
 }
 
-export async function pushRemoteSale(payload: PushSalePayload): Promise<{ id: string }> {
-  // Placeholder: ajustar el path real cuando billing-service exponga
-  // un endpoint de ingesta de ventas de POS/terminal.
-  return request<{ id: string }>(`/invoices/from-pos`, {
+export interface PushSaleResult {
+  id: string;
+  /** Número asignado por el CRM (001-002-000000041). */
+  number: string | null;
+  status: string;
+}
+
+export async function pushRemoteSale(payload: PushSalePayload): Promise<PushSaleResult> {
+  return request<PushSaleResult>(`/invoices/from-pos`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
+

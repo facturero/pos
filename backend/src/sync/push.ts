@@ -1,7 +1,6 @@
 import { prisma } from "../db.js";
 import { pushRemoteSale } from "./admin-client.js";
-
-const TERMINAL_ID = process.env.TERMINAL_ID ?? "pos-desconocido";
+import { getDeviceId } from "../device-identity.js";
 
 // Sube al admin las ventas locales pendientes (`synced: false`).
 // Se procesan una por una y de forma idempotente: si falla la venta N,
@@ -9,17 +8,28 @@ const TERMINAL_ID = process.env.TERMINAL_ID ?? "pos-desconocido";
 // bloquear el resto de la cola). Los errores quedan guardados en
 // `syncError` para poder revisarlos sin mirar logs.
 //
-// IMPORTANTE: billing-service (donde vivirían las facturas) todavía no
-// existe en el CRM. Esta función fallará SIEMPRE hasta que ese servicio
-// exponga un endpoint de ingesta — eso es esperado, no un bug. Las ventas
-// se acumulan sin pérdida en `synced: false` y se subirán solas apenas
-// exista el endpoint real (solo hay que ajustar admin-client.ts).
+// Del otro lado, billing-service convierte cada venta en una factura EMITIDA
+// (POST /invoices/from-pos). La idempotencia es suya: la clave es este terminal
+// más el id local de la venta, así que reintentar una venta ya subida devuelve
+// la misma factura en vez de duplicarla. El id del terminal es el deviceId —
+// estable por equipo — y NO una variable de entorno: dos cajas con el mismo
+// valor compartirían clave y una podría darse por subida con la factura de la
+// otra.
 export async function pushToAdmin(): Promise<{ pushed: number; failed: number }> {
+  const config = await prisma.posConfig.findUnique({ where: { id: 1 } });
+  if (!config) {
+    // Sin emparejar no hay a qué organización ni punto de emisión facturar.
+    // No es un error de la cola: las ventas esperan a que se empareje.
+    return { pushed: 0, failed: 0 };
+  }
+
+  const terminalId = await getDeviceId();
+
   const pending = await prisma.sale.findMany({
     where: { synced: false, status: "COMPLETED" },
     include: {
       items: { include: { product: true } },
-      user: { select: { username: true } },
+      customer: { select: { remoteId: true } },
     },
     orderBy: { createdAt: "asc" },
     take: 50, // en lotes, para no saturar si hubo varios días offline
@@ -30,23 +40,27 @@ export async function pushToAdmin(): Promise<{ pushed: number; failed: number }>
 
   for (const sale of pending) {
     try {
+      // El CRM factura por producto del catálogo. Un artículo que no vino de
+      // allí (sin remoteId) no se puede facturar: se marca el motivo y se deja
+      // la venta en la cola en vez de subir una factura con líneas inventadas.
+      const sinCatalogo = sale.items.filter((item) => !item.product.remoteId);
+      if (sinCatalogo.length > 0) {
+        const nombres = sinCatalogo.map((i) => i.product.name).join(", ");
+        throw new Error(`Hay artículos que no existen en el catálogo del CRM: ${nombres}`);
+      }
+
       const remote = await pushRemoteSale({
-        terminalId: TERMINAL_ID,
-        localSaleId: sale.id,
-        cashierUsername: sale.user.username,
-        subtotal: Number(sale.subtotal),
-        tax: Number(sale.tax),
-        discount: Number(sale.discount),
-        total: Number(sale.total),
-        paymentMethod: sale.paymentMethod,
-        createdAt: sale.createdAt.toISOString(),
-        items: sale.items.map((item: (typeof sale.items)[number]) => ({
-          productRemoteId: item.product.remoteId,
-          sku: item.product.sku,
-          name: item.product.name,
+        terminalId,
+        posSaleId: String(sale.id),
+        establishmentId: config.establishmentId,
+        emissionPointId: config.emissionPointId,
+        customerId: sale.customer?.remoteId ?? null,
+        posTotalCents: Math.round(Number(sale.total) * 100),
+        lines: sale.items.map((item) => ({
+          productId: item.product.remoteId as string,
+          description: item.product.name,
           quantity: Number(item.quantity),
-          unitPrice: Number(item.unitPrice),
-          subtotal: Number(item.subtotal),
+          unitPrice: Number(item.unitPrice).toFixed(2),
         })),
       });
 
