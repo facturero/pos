@@ -1,5 +1,10 @@
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:4000";
 
+// Imagen de un producto ya descargada por el backend del POS (sin token: un <img> no puede mandarlo).
+export function productImageUrl(fileId: string): string {
+  return `${BASE_URL}/product-images/${encodeURIComponent(fileId)}`;
+}
+
 export class ApiError extends Error {
   status: number;
   constructor(message: string, status: number) {

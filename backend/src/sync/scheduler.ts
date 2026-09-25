@@ -3,6 +3,7 @@ import { prisma } from "../db.js";
 import { diagnoseDbError } from "../db-guide.js";
 import { pullFromAdmin } from "./pull.js";
 import { pushToAdmin } from "./push.js";
+import { syncProductImages } from "./images.js";
 import { getSyncState } from "./status.js";
 import { emitSyncState } from "../local/socket.js";
 
@@ -41,6 +42,13 @@ export async function runSyncCycle(): Promise<void> {
     } catch (err) {
       console.error("[sync] pull falló:", err instanceof Error ? err.message : err);
     }
+
+    // Imágenes de producto: en segundo plano, sin esperar (no deben retrasar el envío de ventas).
+    void syncProductImages()
+      .then((r) => {
+        if (r.downloaded || r.failed) console.log(`[sync] imágenes: ${r.downloaded} bajadas, ${r.failed} fallidas`);
+      })
+      .catch((err) => console.error("[sync] imágenes fallaron:", err instanceof Error ? err.message : err));
 
     try {
       const result = await pushToAdmin();

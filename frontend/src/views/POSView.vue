@@ -2,10 +2,11 @@
 import { ref, onMounted, watch, computed } from "vue";
 import { api, ApiError } from "../api/client";
 import { useCartStore, type Product } from "../stores/cart";
+import { usePreferencesStore } from "../stores/preferences";
 import ProductCard from "../components/ProductCard.vue";
 import CartPanel from "../components/CartPanel.vue";
 import Icon from "../components/Icon.vue";
-import { mdiMagnify, mdiCashRegister, mdiCloseCircleOutline } from "@mdi/js";
+import { mdiMagnify, mdiCashRegister, mdiCloseCircleOutline, mdiImageOutline, mdiImageOffOutline } from "@mdi/js";
 
 interface Category {
   id: number;
@@ -19,6 +20,7 @@ interface CashSession {
 }
 
 const cart = useCartStore();
+const preferences = usePreferencesStore();
 
 const products = ref<Product[]>([]);
 const categories = ref<Category[]>([]);
@@ -185,18 +187,33 @@ onMounted(async () => {
     <section class="flex-1 min-w-0 flex flex-col">
       <!-- Barra de búsqueda + categoría -->
       <div class="p-4 border-b border-gray-200 bg-white space-y-3">
-        <div class="relative">
-          <Icon
-            :path="mdiMagnify"
-            :size="18"
-            class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-          />
-          <input
-            v-model="search"
-            type="text"
-            placeholder="Buscar producto, SKU o código de barras..."
-            class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
-          />
+        <div class="flex gap-2">
+          <div class="relative flex-1">
+            <Icon
+              :path="mdiMagnify"
+              :size="18"
+              class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            />
+            <input
+              v-model="search"
+              type="text"
+              placeholder="Buscar producto, SKU o código de barras..."
+              class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <!-- Ver el catálogo con o sin fotos (preferencia de esta caja) -->
+          <button
+            class="shrink-0 w-10 flex items-center justify-center rounded-lg border transition"
+            :class="preferences.showImages
+              ? 'bg-brand-600 text-white border-brand-600'
+              : 'bg-white text-gray-500 border-gray-300 hover:border-brand-400'"
+            :title="preferences.showImages ? 'Ocultar imágenes' : 'Mostrar imágenes'"
+            :aria-pressed="preferences.showImages"
+            aria-label="Mostrar imágenes de los productos"
+            @click="preferences.setShowImages(!preferences.showImages)"
+          >
+            <Icon :path="preferences.showImages ? mdiImageOutline : mdiImageOffOutline" :size="20" />
+          </button>
         </div>
         <div class="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-thin">
           <button

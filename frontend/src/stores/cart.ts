@@ -10,6 +10,8 @@ export interface Product {
   sku: string | null;
   barcode: string | null;
   categoryId: number | null;
+  // Imagen principal (id del archivo en el CRM); el backend del POS la sirve si ya la descargó.
+  imageFileId?: string | null;
   // Impuestos: cada producto trae los suyos (IVA 15%, IVA 0%...). El cálculo lo hace el
   // backend del POS (POST /sales/preview); aquí solo se muestran.
   priceIncludesTax?: boolean;

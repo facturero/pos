@@ -298,6 +298,12 @@ export async function getCountryCode(): Promise<string> {
   return process.env.POS_COUNTRY_CODE ?? "EC";
 }
 
+// Enlace firmado (del almacenamiento) de un archivo de document-service: exige el token del
+// POS y devuelve una URL que se descarga sin cabeceras. Se usa para las imagenes de producto.
+export async function fetchRemoteFileUrl(fileId: string): Promise<{ url: string; mimeType: string }> {
+  return request<{ url: string; mimeType: string }>(`/files/${encodeURIComponent(fileId)}/url`);
+}
+
 export async function fetchRemoteCategories(): Promise<RemoteCategory[]> {
   return request<RemoteCategory[]>(`/categories`);
 }

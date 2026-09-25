@@ -178,6 +178,10 @@ model Product {
   // con seguridad: la venta se rechaza en vez de facturar sin IVA por error).
   priceIncludesTax Boolean @default(false) // true: el precio ya trae el IVA dentro
   taxes            Json?
+  // Imagen principal del producto (document-service). Los bytes se guardan en disco
+  // (ver src/sync/images.ts) para verlas sin conexion; imageMime queda null hasta que se descarga.
+  imageFileId  String?
+  imageMime    String?
   categoryId   Int?
   syncedAt     DateTime?
   createdAt    DateTime @default(now())
