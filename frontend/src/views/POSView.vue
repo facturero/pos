@@ -107,6 +107,19 @@ watch(selectedCategoryId, () => {
   loadProducts();
 });
 
+// Los totales con IVA los calcula el backend del POS (una sola implementación, la misma que
+// se guarda y se factura): se piden al cambiar las líneas, las cantidades o el descuento.
+// Con un pequeño retraso para no lanzar una petición por cada tecla del descuento.
+let quoteTimeout: ReturnType<typeof setTimeout> | null = null;
+watch(
+  () => [cart.lines.map((l) => [l.product.id, l.quantity]), cart.discount],
+  () => {
+    if (quoteTimeout) clearTimeout(quoteTimeout);
+    quoteTimeout = setTimeout(() => void cart.refreshQuote(), 120);
+  },
+  { deep: true },
+);
+
 function selectProduct(product: Product) {
   cart.addProduct(product, 1);
 }
@@ -124,8 +137,8 @@ async function confirmCheckout() {
       cashSessionId: cashSession.value.id,
       customerId: cart.customer?.id ?? undefined,
       items: cart.lines.map((l) => ({ productId: l.product.id, quantity: l.quantity })),
+      // El IVA ya no se manda: el backend lo calcula por producto (cada uno tiene el suyo).
       discount: cart.discount,
-      tax: cart.tax,
       paymentMethod: paymentMethod.value,
     });
     cart.clear();

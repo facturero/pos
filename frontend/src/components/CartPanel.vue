@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
 import { mdiCartOutline, mdiPlus, mdiMinus, mdiCashRegister, mdiCogOutline, mdiClose, mdiAccountOutline } from "@mdi/js";
-import { useCartStore, type Customer } from "../stores/cart";
+import { useCartStore, type Customer, type TaxBreakdownEntry } from "../stores/cart";
 import { useAuthStore } from "../stores/auth";
 import { api } from "../api/client";
 import Icon from "./Icon.vue";
@@ -11,6 +11,12 @@ const emit = defineEmits<{ checkout: []; closeCash: [] }>();
 
 const cart = useCartStore();
 const auth = useAuthStore();
+
+// Nombre de cada fila de impuesto: "IVA 15%", "IVA 0%"... (los tipos de retención no aplican a una venta de caja).
+function taxLabel(t: TaxBreakdownEntry): string {
+  const name = t.kind === "vat" ? "IVA" : t.kind;
+  return `${name} ${Number.isInteger(t.percentage) ? t.percentage : t.percentage.toFixed(2)}%`;
+}
 
 const customerSearch = ref("");
 const customerResults = ref<Customer[]>([]);
@@ -152,36 +158,28 @@ function hideDropdownLater() {
         </div>
       </div>
 
-      <!-- Impuesto -->
-      <div class="flex items-center justify-between text-sm">
-        <label for="cart-tax" class="text-gray-500">Impuesto</label>
-        <div class="flex items-center gap-1">
-          <span class="text-gray-400">$</span>
-          <input
-            id="cart-tax"
-            :value="cart.tax"
-            type="number"
-            min="0"
-            step="0.01"
-            class="w-20 text-right px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-brand-500 text-sm"
-            @input="cart.setTax(Number(($event.target as HTMLInputElement).value) || 0)"
-          />
-        </div>
-      </div>
-
+      <!-- El impuesto ya no se escribe a mano: se calcula por producto (cada uno tiene su IVA). -->
       <div class="border-t border-gray-100 pt-2">
         <div class="flex justify-between text-sm text-gray-500">
-          <span>Subtotal</span>
+          <span>Subtotal (sin IVA)</span>
           <span>${{ cart.subtotal.toFixed(2) }}</span>
         </div>
         <div v-if="cart.discount > 0" class="flex justify-between text-sm text-red-500">
-          <span>Descuento</span>
+          <span>Descuento incluido</span>
           <span>-${{ cart.discount.toFixed(2) }}</span>
         </div>
-        <div v-if="cart.tax > 0" class="flex justify-between text-sm text-amber-600">
-          <span>Impuesto</span>
-          <span>+${{ cart.tax.toFixed(2) }}</span>
+        <!-- Una fila por tasa: IVA 15%, IVA 0%... con la base sobre la que se aplica -->
+        <div
+          v-for="t in cart.taxBreakdown"
+          :key="`${t.kind}-${t.percentage}`"
+          class="flex justify-between text-sm text-amber-600"
+        >
+          <span>{{ taxLabel(t) }} <span class="text-gray-400">(base ${{ t.base.toFixed(2) }})</span></span>
+          <span>+${{ t.amount.toFixed(2) }}</span>
         </div>
+        <p v-if="cart.quoteError" class="text-xs text-red-600 mt-1" role="alert">
+          {{ cart.quoteError }}
+        </p>
         <div class="flex justify-between text-lg font-semibold text-gray-800 mt-1">
           <span>Total</span>
           <span>${{ cart.total.toFixed(2) }}</span>
@@ -190,7 +188,7 @@ function hideDropdownLater() {
 
       <button
         class="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white font-medium py-3 rounded-lg transition mt-2 flex items-center justify-center gap-1.5"
-        :disabled="cart.lines.length === 0"
+        :disabled="cart.lines.length === 0 || !cart.quote || !!cart.quoteError"
         @click="emit('checkout')"
       >
         <Icon :path="mdiCashRegister" :size="18" />

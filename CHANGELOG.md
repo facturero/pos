@@ -61,6 +61,48 @@ instalador/OS (parado en el TODO).
 
 ---
 
+## 2026-09-25 — Sesión: IVA por producto en la caja
+
+**Qué se hizo:** la caja ahora calcula el IVA de cada línea con la tasa **de ese producto**
+y cobra lo mismo que dirá la factura del CRM. Antes el impuesto era un campo manual (por
+defecto 0) y una venta de 8,75 salía facturada por 10,06.
+
+**Por qué así (para que nadie lo "simplifique"):**
+1. **El IVA es individual por producto** (IVA 15%, IVA 0%, no objeto de IVA; con o sin IVA
+   incluido en el precio). No existe una tasa general. `product-service` devuelve `taxes`
+   en `GET /products` (una consulta por página) y el `pull` baja las tasas del país
+   (`GET /countries/:cc/tax-rates`, país = claim `country_code` del JWT del terminal) y guarda
+   en cada producto sus tasas ya resueltas: `products.taxes = [{ taxRateId, kind, percentage }]`
+   y `products.priceIncludesTax`. Así funciona sin conexión.
+2. **Un producto con `taxes = null` NO se vende** (venta rechazada con mensaje): asumir "sin
+   IVA" haría que la caja cobre menos de lo que facture el CRM. Se arregla sincronizando.
+3. **El cálculo replica a billing-service operación por operación** (`src/tax/sale-totals.ts`
+   vs `addLineInTransaction`): mismo `Math.round`, mismo orden. Si billing cambia su regla de
+   redondeo o de precio con IVA incluido, hay que cambiar el POS igual. Lo vigila
+   `scripts/paridad-iva.mjs` (crea productos con tasas distintas en un CRM de DESARROLLO, hace
+   ventas aleatorias y compara cada factura real con lo que calculó la caja) y los 20 tests de
+   `src/tax/sale-totals.test.ts` (`npx tsx --test src/tax/sale-totals.test.ts`).
+4. **El descuento de la venta se reparte por línea** (billing solo admite descuento por línea),
+   proporcional y sumando exacto (`allocateDiscount`), y se manda como `discountCents`.
+5. **`sale.subtotal` ahora es la base imponible** (sin IVA, ya descontada), igual que la factura;
+   `sale_items.subtotal` es la base de la línea, `taxAmount` su IVA y `taxes` el desglose.
+   Las 3 ventas de prueba anteriores a este cambio conservan la semántica vieja.
+6. **El carrito no duplica el cálculo:** el frontend pide `POST /sales/preview` (el mismo código
+   que guarda la venta). El campo "Impuesto" manual desapareció; `tax` en `POST /sales` se ignora.
+7. El `pull` ahora recorre todas las páginas del catálogo (antes solo los primeros 50 productos).
+
+**Verificado:** 117 ventas aleatorias contra el billing real (Docker local), 7 productos de tasas
+distintas, cantidades decimales y descuentos de hasta 30%: subtotal, IVA y total idénticos en todas.
+La verificación visual de la pantalla del carrito la hace el dueño.
+
+**Queda abierto / advertencias:**
+- Si el CRM tiene una `product-service` anterior (sin `taxes` en el listado), los productos quedan
+  con `taxes = null` y no se pueden vender: desplegar primero `product-service`.
+- billing responde "El perfil fiscal de la organización no está completo" cuando en realidad no
+  pudo contactar a organization-service (timeout): el mensaje engaña. Es un fallo de billing, no del POS.
+- El `/sync/run` manual se descarta en silencio si ya hay un ciclo en curso.
+- Los tipos de retención (`withholding_*`) no se modelan en la caja (un producto de venta solo lleva IVA).
+
 ## 2026-08 — Sesión: flujo de emparejamiento TOTP
 
 **Qué se hizo:** Se diseñó e implementó un flujo de emparejamiento tipo

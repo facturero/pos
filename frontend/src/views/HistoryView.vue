@@ -9,12 +9,15 @@ interface SaleItem {
   id: number;
   quantity: string;
   unitPrice: string;
-  subtotal: string;
+  subtotal: string; // base sin IVA, ya descontada
+  taxAmount: string; // IVA de la línea
   product: { name: string };
 }
 
 interface Sale {
   id: number;
+  subtotal: string;
+  tax: string;
   total: string;
   paymentMethod: string;
   status: "COMPLETED" | "VOIDED";
@@ -111,7 +114,15 @@ onMounted(loadSales);
         <div v-if="expandedId === sale.id" class="px-4 pb-3 text-sm text-gray-600 space-y-1">
           <div v-for="item in sale.items" :key="item.id" class="flex justify-between">
             <span>{{ item.quantity }}x {{ item.product.name }}</span>
-            <span>${{ Number(item.subtotal).toFixed(2) }}</span>
+            <span>${{ (Number(item.subtotal) + Number(item.taxAmount)).toFixed(2) }}</span>
+          </div>
+          <div class="flex justify-between text-xs text-gray-400 pt-1 border-t border-gray-100">
+            <span>Subtotal (sin IVA)</span>
+            <span>${{ Number(sale.subtotal).toFixed(2) }}</span>
+          </div>
+          <div class="flex justify-between text-xs text-gray-400">
+            <span>IVA</span>
+            <span>${{ Number(sale.tax).toFixed(2) }}</span>
           </div>
         </div>
       </div>
