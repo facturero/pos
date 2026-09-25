@@ -187,6 +187,17 @@ sed "s|__SYSTEMCTL__|${SYSTEMCTL_BIN}|g" "$SRC/provision/updater.json" \
 install -m 0640 -o root -g "$FACTURERO_USER" /tmp/updater.json.$$ "$ETC/updater.json"
 rm -f /tmp/updater.json.$$
 
+# --- ventana del kiosco (Tauri) ---------------------------------------------------
+# Forma parte de la imagen del SO (casi no cambia): la compila os/window/build-window.sh y viaja en la
+# ISO dentro de os/window/out/. Sin ella el kiosco arranca X pero la pantalla queda negra.
+WINDOW_BIN="$SRC/window/out/facturero-pos-app"
+if [[ -f "$WINDOW_BIN" ]]; then
+  install -D -m 0755 "$WINDOW_BIN" "$FACTURERO_APP/app/facturero-pos-app"
+  log "ventana instalada en $FACTURERO_APP/app/facturero-pos-app"
+else
+  log "AVISO: no hay binario de la ventana ($WINDOW_BIN); el kiosco no mostrara nada (os/window/build-window.sh)"
+fi
+
 # --- unidades systemd ----------------------------------------------------------
 
 log "unidades systemd"
@@ -214,7 +225,15 @@ CURRENT=""
 if [[ -z "$CURRENT" ]]; then
   log "primera instalación de la capa de aplicación (actualizador)..."
   # se dispara por systemd y no con `su`: el servicio aporta EnvironmentFile=pos.env
-  systemctl start facturero-updater.service
+  # Sin red todavia (o el servidor de actualizaciones no responde) la primera descarga falla: se reintenta
+  # en vez de dejar el equipo sin aplicacion (el cliente no tiene a quien pedirle que lo repita).
+  tries=0
+  until systemctl start facturero-updater.service; do
+    tries=$((tries + 1))
+    [[ $tries -ge 40 ]] && die "no se pudo bajar la primera version tras $tries intentos (¿hay red?)"
+    log "no se pudo bajar la aplicacion (¿sin red?); reintento en 15 s ($tries/40)"
+    sleep 15
+  done
   tries=0
   until curl -fsS "$HEALTH_URL" >/dev/null 2>&1; do
     tries=$((tries + 1)); [[ $tries -gt 90 ]] && die "el backend no respondio en 3 min"

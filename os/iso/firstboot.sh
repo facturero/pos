@@ -30,6 +30,8 @@ bash "$OS_DIR/provision/install.sh" "${ADMIN_ARGS[@]}" "${SSH_ARGS[@]}"
 bash "$OS_DIR/kiosk/setup-kiosk.sh"
 
 : > /opt/facturero/OS-FIRSTBOOT-DONE
-systemctl disable --now facturero-firstboot.service
+# OJO: `disable --now` PARABA esta misma unidad (y con ella este script, SIGTERM) antes de llegar al
+# reboot: el equipo se quedaba sin reiniciar. Solo se deshabilita; el reboot la termina.
+systemctl disable facturero-firstboot.service
 echo "== primer arranque terminado; reiniciando al kiosco =="
 systemctl reboot

@@ -3,9 +3,14 @@ Description=Facturero POS — primer arranque (provisión + kiosco)
 # Lo habilita autoinstall.yaml (late-commands) y se desactiva a sí mismo al
 # terminar; el reinicio entra directo a la sesión kiosco.
 After=network-online.target
+StartLimitIntervalSec=0
 Wants=network-online.target
 
 [Service]
+# Si algo falla (red caida, servidor de actualizaciones no disponible) se repite solo: la provision es
+# idempotente y el cliente no tiene como relanzarla.
+Restart=on-failure
+RestartSec=30
 Type=oneshot
 ExecStart=/bin/bash /opt/facturero/os-src/iso/firstboot.sh
 # Sin limite: la primera provision baja cientos de MB y en hardware lento (o red lenta) supera con
