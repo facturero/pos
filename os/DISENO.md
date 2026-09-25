@@ -69,11 +69,33 @@ sistema). Las pruebas del actualizador usan carpetas temporales y comandos de me
 | 1 | Actualizador + firma de paquetes | `os/updater`, `os/release`, pruebas | ✅ hecho |
 | 2 | Pantalla servida por el backend + `/health` + `binaryTargets` de Prisma | cambios en `pos/backend` y `pos/frontend` | ✅ hecho y probado en modo producción de `:4000` |
 | 3 | Script de construcción de la versión (Linux/Docker) | `os/release/build-release.sh`: compila, instala deps de producción, arma la carpeta que consume `sign-release` | ✅ hecho y probado (build + firma + smoke) |
+| 3b | CI de publicación en GitHub Releases | `.github/workflows/release.yml`: construye al crear `vX.Y.Z`, firma con `RELEASE_SIGNING_KEY` y sube `latest.json` + `.tar.gz` con `gh release create` | ✅ escrito y validado (YAML); **sin ejecutar** |
 | 4 | Aprovisionamiento de Ubuntu (`install.sh`): MySQL, Node fijado, usuario `facturero`, unidades systemd (backend + timer del actualizador), cortafuegos | `os/provision/` | pendiente — **se prueba en VirtualBox** |
 | 5 | Modo kiosco: autologin, Openbox arrancando la ventana, sin TTY ni atajos, reinicio automático si la ventana se cierra | `os/kiosk/` | pendiente — VM |
 | 6 | Instalación desatendida: `autoinstall.yaml` (cloud-init) y remasterizado de la ISO | `os/iso/` | pendiente — necesita la ISO de Ubuntu Server 24.04 |
 | 7 | Publicación en **GitHub Releases** de `facturero/pos` (repo público) + CI que firma y publica al crear una etiqueta `vX.Y.Z` | `.github/workflows/release.yml` | decidido; pendiente de escribir (ver HANDOFF-pos-os.md) |
 | 8 | Icono, nombre del equipo y marca; prueba en hardware real | — | pendiente |
+
+## Publicar una versión (pasos del dueño)
+
+El repo es público y la clave privada de firma **nunca va al repo** (regla 2).
+
+1. **Generar el par de claves una sola vez** (fuera del repo, p. ej. en una USB):
+   `node pos/os/release/sign-release.mjs --gen-keys <carpeta fuera del repo>`.
+   Guarda `release-private.pem` a salvo: perderlo = no poder actualizar los equipos instalados.
+2. **Poner la privada como secreto de GitHub**: `RELEASE_SIGNING_KEY` en
+   *Settings → Secrets and variables → Actions* de `facturero/pos`, con el contenido
+   del archivo `release-private.pem` (el workflow la escribe en un archivo temporal
+   sin imprimirla nunca).
+3. **Versionar la pública** en el repo: `os/release/release-public.pem` (no es secreto;
+   `install.sh` la copia a `/etc/facturero/release-public.pem`).
+4. **Crear la etiqueta** cuando toque publicar: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+   El workflow `Release POS` construye en `ubuntu-latest`, firma y sube a la Release
+   `latest.json` + `facturero-pos-<X.Y.Z>.tar.gz`. Las URL que consultan los equipos:
+   `https://github.com/facturero/pos/releases/latest/download/latest.json`.
+5. **NOTA — política de paquetes firmados**: no publicar una versión sin que la firma
+   y el `sha256` estén validados contra `os/release/release-public.pem`
+   (`node os/updater/updater.test.mjs` cubre verify; `verifyManifest` del actualizador).
 
 ## Decisiones abiertas
 

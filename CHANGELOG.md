@@ -22,6 +22,39 @@ Pendientes no-código: decisión de IVA en la caja y stock real.
 
 ---
 
+## 2026-09-25 — Sesión: Fase 3b del OS — CI de publicación en GitHub Releases
+
+**Qué se hizo:** `pos/.github/workflows/release.yml`. Al empujar una etiqueta
+`v*.*.*`, se construye en `ubuntu-latest` con el MISMO `build-release.sh` (docker),
+se firma con el secreto `RELEASE_SIGNING_KEY` (la clave privada se escribe a un
+archivo temporal `chmod 600` y jamás se imprime) y `gh release create` sube
+`latest.json` + `facturero-pos-<v>.tar.gz` con el `GITHUB_TOKEN` del workflow
+(`permissions: contents: write`). `releases/latest` resuelve a la última release
+no-borrador: es la URL fija que consultan los equipos.
+
+**Por qué:** la fase 7 del diseño decidió GitHub Releases como repositorio de
+actualizaciones; esto automatiza la publicación para que el dueño solo cree la
+etiqueta. Como `facturero/pos` es público, los equipos descargan sin token.
+
+**Qué se decidió:**
+- La clave **pública** se versiona en `os/release/release-public.pem` (paso del
+  dueño: copiarla al repo); `install.sh` la copiará a `/etc/facturero/` (fase 4).
+- El CI **no** usa `--smoke` (no hay MySQL local en el runner); el smoke queda
+  para la máquina de desarrollo. El build+firma es idéntico al de la fase 3.
+- Los pasos del dueño quedaron en `os/DISENO.md` (generar claves, crear el
+  secreto, copiar la pública, crear la etiqueta).
+
+**Verificación:** YAML validado con Ruby/Psych en contenedor (estructura: `on`,
+`permissions`, `runs-on`, steps; ojo: YAML 1.1 convierte `on:` en booleano — el
+parseo de GitHub no lo hace). **NO se pudo ejecutar**: no hay token del workflow
+ni etiqueta real; requiere además la clave privada del dueño. Cuando exista una
+`v0.1.0` real, el workflow la firmará con la clave buena.
+
+**Siguiente paso:** fases 4–6 (provisión Ubuntu, kiosco, ISO) — se escriben y
+validan sin VM (reglas del HANDOFF).
+
+---
+
 ## 2026-09-25 — Sesión: Fase 3 del OS — empaquetado y firma de versiones
 
 **Qué se hizo:** `os/release/build-release.sh` construye una versión dentro de un
