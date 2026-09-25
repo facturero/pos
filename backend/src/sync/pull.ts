@@ -4,7 +4,10 @@ import {
   fetchRemoteCustomerDetail,
   fetchRemoteCustomers,
   fetchRemoteProducts,
+  fetchRemoteTaxRates,
   fetchRemoteUsers,
+  getCountryCode,
+  type RemoteProduct,
 } from "./admin-client.js";
 
 // Baja del admin y deja espejados localmente (por `remoteId`, uuid):
@@ -101,8 +104,16 @@ async function syncCategoriesAndProducts(): Promise<{
 
   const remoteProducts = await fetchRemoteProducts(establishmentId);
 
+  // Las tasas se bajan UNA vez y se resuelven por producto: el IVA es individual de cada
+  // producto (cada uno referencia su tasa por id). Si esta llamada falla, se corta la
+  // sincronización de productos entera: es preferible conservar el catálogo anterior, con
+  // sus impuestos correctos, que guardar productos con impuestos inventados.
+  const countryCode = await getCountryCode();
+  const rateById = new Map((await fetchRemoteTaxRates(countryCode)).map((r) => [r.id, r]));
+
   for (const rp of remoteProducts) {
     const localCategoryId = rp.categoryId ? categoryIdMap.get(rp.categoryId) : undefined;
+    const taxes = resolveProductTaxes(rp, rateById);
 
     await prisma.product.upsert({
       where: { remoteId: rp.id },
@@ -113,6 +124,8 @@ async function syncCategoriesAndProducts(): Promise<{
         currencyCode: rp.currencyCode,
         active: rp.status === "active",
         categoryId: localCategoryId,
+        priceIncludesTax: rp.priceIncludesTax,
+        ...(taxes !== undefined ? { taxes } : {}),
         syncedAt: new Date(),
       },
       create: {
@@ -123,6 +136,8 @@ async function syncCategoriesAndProducts(): Promise<{
         currencyCode: rp.currencyCode,
         active: rp.status === "active",
         categoryId: localCategoryId,
+        priceIncludesTax: rp.priceIncludesTax,
+        ...(taxes !== undefined ? { taxes } : {}),
         syncedAt: new Date(),
       },
     });
@@ -266,4 +281,23 @@ async function syncCustomers(): Promise<number> {
   }
 
   return remoteCustomers.length;
+}
+
+// Impuestos del producto con su porcentaje resuelto: [{ taxRateId, kind, percentage }].
+// `undefined` = el CRM no mandó `taxes` (versión anterior): se deja lo que ya hubiera
+// guardado, y un producto sin datos de impuestos no se puede cobrar (ver sales.routes.ts).
+// Una tasa que ya no aparece en tax-service se trata como 0%, igual que billing (que la
+// factura con 0 en ese caso), y se avisa en el log.
+function resolveProductTaxes(
+  rp: RemoteProduct,
+  rateById: Map<string, { percentage: string | number }>,
+): { taxRateId: string; kind: string; percentage: number }[] | undefined {
+  if (rp.taxes === undefined) return undefined;
+  return rp.taxes.map((t) => {
+    const rate = rateById.get(t.taxRateId);
+    if (!rate) {
+      console.warn(`[sync] producto ${rp.id}: la tasa ${t.taxRateId} no existe en tax-service; se usa 0%`);
+    }
+    return { taxRateId: t.taxRateId, kind: t.kind, percentage: rate ? parseFloat(String(rate.percentage)) : 0 };
+  });
 }

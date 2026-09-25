@@ -61,6 +61,9 @@ export async function pushToAdmin(): Promise<{ pushed: number; failed: number }>
           description: item.product.name,
           quantity: Number(item.quantity),
           unitPrice: Number(item.unitPrice).toFixed(2),
+          // billing solo admite descuento POR LÍNEA: aquí va la parte del descuento de la
+          // venta que le tocó a esta línea (ver allocateDiscount en src/tax). Se omite si es 0.
+          ...(Number(item.discount) > 0 ? { discountCents: Math.round(Number(item.discount) * 100) } : {}),
         })),
       });
 

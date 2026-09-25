@@ -222,6 +222,27 @@ export interface RemoteProduct {
   currencyCode: string;
   priceIncludesTax: boolean;
   imageFileId: string | null;
+  /**
+   * Impuestos asignados al producto (cada producto tiene los suyos). Solo trae el id de
+   * la tasa: el porcentaje sale de `fetchRemoteTaxRates`. Ausente si el CRM es anterior
+   * a este campo.
+   */
+  taxes?: RemoteProductTax[];
+}
+
+export interface RemoteProductTax {
+  id: string;
+  taxRateId: string;
+  kind: string;
+}
+
+// Tasa de tax-service (GET /countries/:code/tax-rates).
+export interface RemoteTaxRate {
+  id: string;
+  code: string;
+  name?: string | null;
+  percentage: string | number; // decimal, p. ej. "15.00"
+  kind: string;
 }
 
 export interface RemoteCategory {
@@ -238,14 +259,43 @@ export interface RemoteCategory {
 // product-service filtra con `?establishmentId=` (asignación product_establishments).
 // Si tu catálogo crece mucho, este es el primer lugar a optimizar.
 export async function fetchRemoteProducts(establishmentId?: string): Promise<RemoteProduct[]> {
-  const params = establishmentId
+  const base = establishmentId
     ? `?status=active&establishmentId=${encodeURIComponent(establishmentId)}`
     : `?status=active`;
-  // product-service pagina la lista (respuesta { items, total, page, pageSize });
-  // aquí solo importa la página actual (el catálogo de un establecimiento cabe
-  // holgadamente en el pageSize por defecto del servicio).
-  const res = await request<{ items: RemoteProduct[] }>(`/products${params}`);
-  return res.items;
+  // product-service pagina la lista (respuesta { items, total, page, pageSize }) y su
+  // pageSize por defecto es 50: con más productos en el establecimiento el POS se
+  // quedaría solo con los primeros 50 sin avisar. Se recorren todas las páginas
+  // (500 es el máximo que acepta el servicio).
+  const PAGE_SIZE = 500;
+  const all: RemoteProduct[] = [];
+  for (let page = 1; ; page++) {
+    const res = await request<{ items: RemoteProduct[]; total: number }>(
+      `/products${base}&page=${page}&pageSize=${PAGE_SIZE}`,
+    );
+    all.push(...res.items);
+    if (res.items.length < PAGE_SIZE || all.length >= res.total) break;
+  }
+  return all;
+}
+
+// Tasas de impuesto del país (IVA 15%, IVA 0%, no objeto de IVA...). Cada producto
+// referencia la suya por id; el POS las baja aquí para calcular el IVA sin conexión.
+export async function fetchRemoteTaxRates(countryCode: string): Promise<RemoteTaxRate[]> {
+  return request<RemoteTaxRate[]>(`/countries/${encodeURIComponent(countryCode)}/tax-rates`);
+}
+
+// País de la organización: viene en el claim `country_code` del JWT del terminal (el
+// mismo que el gateway reenvía a billing como X-Country-Code). Sin claim, POS_COUNTRY_CODE
+// del .env y, por último, EC.
+export async function getCountryCode(): Promise<string> {
+  try {
+    const token = await ensureValidToken();
+    const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString()) as { country_code?: string };
+    if (payload.country_code) return payload.country_code;
+  } catch {
+    // sin token decodificable: se usa el valor por defecto
+  }
+  return process.env.POS_COUNTRY_CODE ?? "EC";
 }
 
 export async function fetchRemoteCategories(): Promise<RemoteCategory[]> {

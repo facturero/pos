@@ -172,6 +172,12 @@ model Product {
   stock        Decimal  @default(0) @db.Decimal(10, 3) // sin control real aún (ver README)
   unit         String   @default("unidad")
   active       Boolean  @default(true)
+  // Impuestos: cada producto tiene los SUYOS (IVA 15%, IVA 0%, no objeto...), no hay una
+  // tasa general. El pull los baja del CRM ya resueltos:
+  // [{ taxRateId, kind, percentage }]. null = aun no se sincronizo (no se puede cobrar
+  // con seguridad: la venta se rechaza en vez de facturar sin IVA por error).
+  priceIncludesTax Boolean @default(false) // true: el precio ya trae el IVA dentro
+  taxes            Json?
   categoryId   Int?
   syncedAt     DateTime?
   createdAt    DateTime @default(now())
@@ -240,8 +246,13 @@ model SaleItem {
   saleId    Int
   productId Int
   quantity  Decimal @db.Decimal(10, 3)
-  unitPrice Decimal @db.Decimal(10, 2)
+  unitPrice Decimal @db.Decimal(10, 2) // precio del catalogo (con IVA si priceIncludesTax)
+  // subtotal = base imponible de la linea SIN impuestos y ya descontada (igual que la
+  // linea de la factura del CRM). El descuento de la venta se reparte entre lineas.
   subtotal  Decimal @db.Decimal(10, 2)
+  discount  Decimal @default(0) @db.Decimal(10, 2) // parte del descuento de la venta en esta linea
+  taxAmount Decimal @default(0) @db.Decimal(10, 2) // suma de los impuestos de la linea
+  taxes     Json? // desglose: [{ kind, percentage, baseCents, amountCents }]
 
   sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id])
