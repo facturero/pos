@@ -1,0 +1,11 @@
+[Unit]
+Description=Facturero POS — primer arranque (provisión + kiosco)
+# Lo habilita autoinstall.yaml (late-commands) y se desactiva a sí mismo al
+# terminar; el reinicio entra directo a la sesión kiosco.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/facturero/os-src/iso/firstboot.sh
+TimeoutStartSec=1800

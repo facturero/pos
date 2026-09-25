@@ -1,0 +1,14 @@
+# Parámetros de la instalación desatendida. Este archivo se copia a la raíz de
+# la ISO como `iso-params.env` y `late-commands` lo deja en
+# /etc/facturero/install-params.env; `firstboot.sh` lo consume en el primer
+# arranque. Ninguno de estos valores va en el repo: los sustituye build-iso.sh.
+#
+# ADMIN_API_BASE_URL: gateway del CRM. SIN valor por defecto (producción es
+# https://api.noahsolution.com; no fijarlo sin confirmación del dueño).
+# SSH_ALLOW_FROM: red de administración (CIDR) desde la que se autoriza SSH
+# de servicio. Vacío = ufw niega todo lo entrante.
+# SSH_AUTHORIZED_KEY: clave pública del técnico (sin comentarios).
+
+ADMIN_API_BASE_URL=__ADMIN_API_BASE__
+SSH_ALLOW_FROM=__SSH_ALLOW_FROM__
+SSH_AUTHORIZED_KEY=__SSH_AUTHORIZED_KEY__

@@ -1,0 +1,46 @@
+#cloud-config
+# autoinstall.yaml de Ubuntu Server 24.04 LTS para el equipo Facturero.
+# Se coloca en la raíz de la ISO remasterizada (os/iso/REMOSTRADO.md) y el
+# kernel arranca con `autoinstall ds=nocloud;s=/cdrom/`.
+# Los placeholders __...__ los sustituye build-iso.sh (o el dueño) según los
+# parámetros de os/iso/iso-params.example.
+autoinstall:
+  version: 1
+  locale: es_ES.UTF-8
+  keyboard:
+    layout: es
+  source:
+    id: ubuntu-server-minimal
+  identity:
+    hostname: __HOSTNAME__
+    username: taller
+    # sin contraseña de login: el acceso técnico es SOLO por SSH con clave
+    # (recuadro ssh abajo) desde la red de administración
+    password: null
+  ssh:
+    install-server: true
+    allow-pw: false
+  storage:
+    layout:
+      name: lvm
+  user-data:
+    # cloud-config extra que subiquity fusiona: añade la clave SSH al usuario
+    # técnico `taller` (la clave de la llave es el parámetro de build-iso.sh)
+    users:
+      - name: taller
+        groups: [sudo]
+        shell: /bin/bash
+        ssh_authorized_keys:
+          - __SSH_PUB_KEY__
+  late-commands:
+    # Se ejecutan en el entorno vivo, con la raíz instalada en /target
+    # 1) los scripts del OS viajan en la ISO bajo /cdrom/pos-os
+    - mkdir -p /target/opt/facturero
+    - cp -ra /cdrom/pos-os /target/opt/facturero/os-src
+    # 2) parámetros de la instalación (se consumen en el primer arranque)
+    - mkdir -p /target/etc/facturero
+    - cp /cdrom/iso-params.env /target/etc/facturero/install-params.env
+    # 3) unidad de primer arranque que corre install.sh + setup-kiosk.sh
+    - cp /cdrom/pos-os/iso/facturero-firstboot.service /target/etc/systemd/system/facturero-firstboot.service
+    - mkdir -p /target/etc/systemd/system/multi-user.target.wants
+    - ln -s /etc/systemd/system/facturero-firstboot.service /target/etc/systemd/system/multi-user.target.wants/facturero-firstboot.service
