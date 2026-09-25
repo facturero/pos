@@ -29,6 +29,12 @@ ADMIN_API_BASE_URL=${ADMIN_API_BASE_URL:-}
 SSH_ALLOW_FROM=${SSH_ALLOW_FROM:-}
 SSH_AUTHORIZED_KEY=${SSH_AUTHORIZED_KEY:-}
 [[ -n "$SSH_AUTHORIZED_KEY" ]] || die "falta SSH_AUTHORIZED_KEY (clave pública del técnico)"
+# Repositorio de actualizaciones que llevará la ISO. Para pruebas sin publicar
+# nada, apuntar a un servidor local (p. ej. MANIFEST_URL=http://host:PORT/latest.json)
+# con un paquete firmado por la misma clave pública que se inyecta abajo.
+MANIFEST_URL=${MANIFEST_URL:-https://github.com/facturero/pos/releases/latest/download/latest.json}
+# Clave PÚBLICA a incorporar al equipo (si se omite, la del repo os/release/).
+RELEASE_PUBLIC_KEY=${RELEASE_PUBLIC_KEY:-}
 
 echo "== extrayendo la ISO base =="
 rm -rf "$WORK"; mkdir -p "$WORK/iso"
@@ -46,14 +52,32 @@ sed -e "s|__ADMIN_API_BASE__|${ADMIN_API_BASE_URL}|" \
     -e "s|__SSH_AUTHORIZED_KEY__|${SSH_AUTHORIZED_KEY}|" \
     "$SRC/iso/iso-params.example" > "$WORK/iso/iso-params.env"
 
+echo "== parametrizando MANIFEST_URL y la clave pública del equipo =="
+if [[ -n "$MANIFEST_URL" && "$MANIFEST_URL" != "https://github.com/facturero/pos/releases/latest/download/latest.json" ]]; then
+  sed -i "s|https://github.com/facturero/pos/releases/latest/download/latest.json|${MANIFEST_URL}|" \
+    "$WORK/iso/pos-os/provision/updater.json"
+fi
+if [[ -n "$RELEASE_PUBLIC_KEY" ]]; then
+  [[ -f "$RELEASE_PUBLIC_KEY" ]] || die "no existe la clave pública: $RELEASE_PUBLIC_KEY"
+  cp -f "$RELEASE_PUBLIC_KEY" "$WORK/iso/pos-os/release/release-public.pem"
+fi
+
 echo "== inyectando la entrada de grub (también vale para EFI: el grub EFI de
    la ISO hace configfile del mismo grub.cfg) =="
+# índice (0-based) de nuestra entrada = número de menuentries previas
+GRUB_IDX=$(grep -c '^menuentry ' "$WORK/iso/boot/grub/grub.cfg")
 cat >> "$WORK/iso/boot/grub/grub.cfg" <<'EOF'
 
 menuentry "Instalar Facturero (desatendida) — autoinstall" {
     linux /casper/vmlinuz autoinstall ds=nocloud\;s=/cdrom/ quiet ---
     initrd /casper/initrd
 }
+EOF
+# la instalación arranca sola a los 5 s (default + timeout al final del cfg)
+cat >> "$WORK/iso/boot/grub/grub.cfg" <<EOF
+
+set default=${GRUB_IDX}
+set timeout=5
 EOF
 
 echo "== reconstruyendo la ISO ($OUT) =="
