@@ -42,9 +42,15 @@ const privateKey = createPrivateKey(fs.readFileSync(need("key"), "utf8"));
 fs.mkdirSync(out, { recursive: true });
 const name = `facturero-pos-${version}.tar.gz`;
 fs.writeFileSync(path.join(stage, "VERSION"), version + "\n");
-// cwd + rutas relativas: evita que tar (GNU en Windows) tome "C:" por un equipo remoto.
-const r = spawnSync("tar", ["-czf", path.relative(stage, path.join(out, name)).split(path.sep).join("/"), "."], { cwd: stage, stdio: "inherit" });
+// tar se ejecuta con cwd = stage y escribe el paquete en el directorio HERMANO ("../<nombre>"): una
+// ruta relativa corta funciona igual con GNU tar de Git Bash (que ve /tmp y C:\Users con raices
+// distintas: un "../../../.." largo hasta --out apuntaba fuera del arbol) y con bsdtar de Windows. Luego
+// se mueve a --out con fs.
+const sibling = path.join(path.dirname(stage), `.${name}.${process.pid}`);
+const r = spawnSync("tar", ["-czf", `../${path.basename(sibling)}`, "."], { cwd: stage, stdio: "inherit" });
 if (r.status !== 0) throw new Error("tar falló");
+fs.copyFileSync(sibling, path.join(out, name));
+fs.rmSync(sibling, { force: true });
 
 const bytes = fs.readFileSync(path.join(out, name));
 const payload = Buffer.from(JSON.stringify({
