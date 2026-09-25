@@ -61,6 +61,27 @@ instalador/OS (parado en el TODO).
 
 ---
 
+## 2026-09-25 — Sesión: imágenes de producto, historial por días
+
+**Imágenes:** `product-service` ya devuelve `imageFileId` (imagen principal) en `GET /products`. El POS
+lo guarda en `products.imageFileId` durante el pull y `src/sync/images.ts` descarga los bytes a disco
+(`data/product-images/<fileId>`, configurable con `POS_IMAGES_DIR`): pide el enlace firmado a
+`GET /files/:id/url` (document-service, con el token del POS) y baja el archivo. Se hace **en segundo
+plano** tras el pull, sin retrasar el envío de ventas; una imagen que falla se reintenta en el ciclo
+siguiente y el producto se ve sin foto mientras tanto. Como el CRM le pone otro id a una imagen
+cambiada, "ya está en disco" = "está al día"; las que ya nadie usa se borran. Se sirven por
+`GET /product-images/:fileId` **sin token** a propósito (un `<img>` no puede mandarlo; el backend solo
+escucha en 127.0.0.1). El botón de imagen junto al buscador de la caja las muestra u oculta (preferencia
+de esa caja, en `localStorage`; activado por defecto). Prueba sin document-service:
+`npx tsx scripts/prueba-imagenes.mjs`. **No verificado contra document-service/MinIO reales** (no corren
+en el Docker local): falta comprobar que el enlace firmado sea alcanzable desde el equipo del POS.
+
+**Historial:** ya no hay botón "Sincronizar ahora" (el usuario no controla la sync); muestra solo los
+últimos 3 días, con separador por día y numeración de ventas que reinicia cada día (solo visual; el id
+real sigue siendo el que se usa para anular y sincronizar).
+
+---
+
 ## 2026-09-25 — Sesión: IVA por producto en la caja
 
 **Qué se hizo:** la caja ahora calcula el IVA de cada línea con la tasa **de ese producto**
