@@ -45,6 +45,8 @@ MySQL local                base pos_db (solo escucha en 127.0.0.1)
 
 - **Fase 2 (pantalla servida por el backend, un solo origen)**: `POS_FRONTEND_DIST` en `index.ts` sirve el `frontend/dist` desde `:4000` (incluida la SPA en modo history: solo a peticiones de navegación con `Accept: text/html`), `/health` chequea la BD con `SELECT 1` y reporta la versión del archivo `VERSION` del dist, y el socket local se monta en el mismo server. `tauri.conf.json` abre la webview en `http://127.0.0.1:4000` (Tauri no se compiló: sin toolchain de Rust en la máquina de desarrollo). Pruebas en el CHANGELOG.
 
+- **Fase 3 (`os/release/build-release.sh`)**: construye y firma la versión dentro de `node:22-bookworm-slim` (monta el repo solo lectura). Empaqueta: `backend/dist` compilado, `package*.json`, `node_modules` **solo de producción** con la CLI de prisma, `backend/prisma` (schema + migraciones), `frontend/dist`, y `VERSION`. Correr sin `--key` solo arma el stage; `--smoke` arranca el paquete contra el MySQL del compose local (por `host.docker.internal`) y comprueba `/health` + pantalla. Paquete ~39 MB gzip. Tres trampas resueltas en el script, documentadas en comentarios: (1) prisma pasó a `dependencies` para que `prisma migrate deploy` exista en `node_modules` de producción; (2) `node:22-*-slim` NO trae `openssl` y Prisma entonces detecta "openssl-1.1.x" y no encuentra el motor 3.0.x — el contenedor de build y el smoke instalan `openssl`; (3) Git Bash no puede pasar stdin a `docker.exe` (el script interno va montado como archivo) y `node` de Windows no entiende rutas POSIX (se pasan con `cygpath -w`).
+
 **No probado todavía:** nada de lo que necesita Linux real (systemd, Openbox, autoinstall, MySQL del
 sistema). Las pruebas del actualizador usan carpetas temporales y comandos de mentira.
 
@@ -66,7 +68,7 @@ sistema). Las pruebas del actualizador usan carpetas temporales y comandos de me
 |---|---|---|---|
 | 1 | Actualizador + firma de paquetes | `os/updater`, `os/release`, pruebas | ✅ hecho |
 | 2 | Pantalla servida por el backend + `/health` + `binaryTargets` de Prisma | cambios en `pos/backend` y `pos/frontend` | ✅ hecho y probado en modo producción de `:4000` |
-| 3 | Script de construcción de la versión (Linux/Docker) | `os/release/build-release.sh`: compila, instala deps de producción, arma la carpeta que consume `sign-release` | pendiente |
+| 3 | Script de construcción de la versión (Linux/Docker) | `os/release/build-release.sh`: compila, instala deps de producción, arma la carpeta que consume `sign-release` | ✅ hecho y probado (build + firma + smoke) |
 | 4 | Aprovisionamiento de Ubuntu (`install.sh`): MySQL, Node fijado, usuario `facturero`, unidades systemd (backend + timer del actualizador), cortafuegos | `os/provision/` | pendiente — **se prueba en VirtualBox** |
 | 5 | Modo kiosco: autologin, Openbox arrancando la ventana, sin TTY ni atajos, reinicio automático si la ventana se cierra | `os/kiosk/` | pendiente — VM |
 | 6 | Instalación desatendida: `autoinstall.yaml` (cloud-init) y remasterizado de la ISO | `os/iso/` | pendiente — necesita la ISO de Ubuntu Server 24.04 |

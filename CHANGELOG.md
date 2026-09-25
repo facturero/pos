@@ -15,8 +15,112 @@ Antes de tocar código, lee también `rules.md` (reglas fijas) y `todo.md`
 El POS está **emparejado y validado de punta a punta contra un CRM en Docker**
 (2026-09-25): catálogo ↓, venta local, push → factura `issued` numerada en el
 CRM, idempotencia, offline sin pérdida, y desvinculación remota por socket.io.
-Quedan pendientes no-código: decisión de IVA en la caja, inventario/stock real,
-SRI, y el instalador/OS original.
+Del OS (capas 2–6 del HANDOFF) están hechas la 2 (pantalla servida por el backend,
+un solo origen) y la 3 (empaquetado + firma en Docker con `build-release.sh`);
+falta la CI de publicación (3b) y las fases 4–6 (provisión, kiosco, ISO).
+Pendientes no-código: decisión de IVA en la caja y stock real.
+
+---
+
+## 2026-09-25 — Sesión: Fase 3 del OS — empaquetado y firma de versiones
+
+**Qué se hizo:** `os/release/build-release.sh` construye una versión dentro de un
+contenedor `node:22-bookworm-slim` (el repo se monta SOLO lectura; nada de
+`node_modules` de desarrollo se toca) y firma el paquete con `sign-release.mjs`.
+El stage queda con: `backend/dist`, `backend/package*.json`, `backend/node_modules`
+**solo de producción**, `backend/prisma` (schema + migraciones), `frontend/dist` y
+`VERSION` (en la raíz y en `backend/dist`). `--smoke` arranca el paquete ya firmado
+contra el MySQL del compose local (vía `host.docker.internal`) y comprueba `/health`
+y que la pantalla se sirve. Correr sin `--key` solo arma el stage.
+
+**Por qué:** la regla 3 de `os/DISENO.md` — el paquete debe llevar los motores de
+Linux (argon2 + query engine de Prisma/OpenSSL3). Construir en un contenedor
+garantiza el entorno correcto y reproducible, y separa el empaquetado del
+`node_modules` del equipo de desarrollo.
+
+**Decisiones (todas con su porqué en los comentarios del script):**
+- **`prisma` pasó de `devDependencies` a `dependencies`** (backend): el actualizador
+  corre `prisma migrate deploy` desde el `node_modules` de producción; con
+  `--omit=dev` la CLI desaparecía y cada actualización habría fallado en migrar.
+  `package-lock.json` regenerado (diff mínimo: solo cambia de sección).
+- **`node:22-*-slim` NO trae `openssl`**: sin `libssl`, Prisma detecta
+  "openssl-1.1.x" y no encuentra el motor `debian-openssl-3.0.x` que llevamos. El
+  contenedor de build y el de smoke instalan `openssl`. En los equipos objetivo
+  (Ubuntu 24.04) OpenSSL3 viene por defecto.
+- **Git Bash (MSYS) no puede pasar stdin a `docker.exe`**: el script interno del
+  contenedor va montado como archivo (`/inner/inner.sh`).
+- **`node` de Windows no entiende rutas POSIX de Git Bash** (`/c/…` → `C:\c\…`, y
+  `pwd` normaliza el TEMP a `/tmp/…` → `C:\tmp\…`): al firmar, el stage y el out se
+  pasan con `cygpath -w`.
+- **`VERSION` se escribe dos veces**: en la raíz del stage (lo hace `sign-release`,
+  es el que ve el layout del actualizador) y en `backend/dist/VERSION` (donde lo
+  lee `/health`, relativo al `dist`).
+
+**Verificación (todo corrido, no solo escrito):**
+- Build completo en el contenedor: `tsc` + `prisma generate` + `npm ci --omit=dev`
+  con chequeo de que `node_modules/.bin/prisma` existe, y frontend con
+  `vue-tsc --noEmit && vite build`. Stage: 104 MB.
+- Firma: `facturero-pos-0.1.0.tar.gz` = 40,824,414 bytes (~39 MB) + `latest.json`.
+- Smoke con clave de prueba contra el MySQL local: `/health` →
+  `{"status":"ok","version":"0.1.0"}` y `GET /` sirve el HTML.
+- Cadena de integridad cerrada: `verifyManifest` (del propio actualizador) acepta
+  el `latest.json` con la clave pública de prueba y el `size` coincide.
+- `updater.test.mjs`: 10/10 en verde (sigue igual tras los cambios).
+- Contenido del paquete revisado (`tar -tzf`): `backend/`, `frontend/`, `VERSION`
+  (x2) y `node_modules/.bin/prisma`.
+
+**No probado**, por no tener Linux real: la instalación en el equipo destino
+(MySQL del sistema, systemd, sudoers). El smoke cubre el arranque del paquete
+COMPILADO en Linux con una BD MySQL real, que es lo que el actualizador va a
+hacer tras descomprimir.
+
+**Siguiente paso:** fase 3b — `pos/.github/workflows/release.yml` (CI que construye
+en `ubuntu-latest`, firma con el secreto `RELEASE_SIGNING_KEY` y sube a GitHub
+Releases); y después las fases 4–6 (provisión, kiosco, ISO).
+
+---
+
+## 2026-09-25 — Sesión: Fase 2 del OS — la pantalla la sirve el propio backend
+
+**Qué se hizo:** con un solo origen quedó listo el "kiosco": el backend compilado
+sirve el `frontend/dist` desde `127.0.0.1:4000` (`POS_FRONTEND_DIST`), `/health`
+ahora verifica la base con `SELECT 1` y reporta la versión de un archivo `VERSION`
+que va junto al dist, Prisma lleva el motor de Ubuntu 24.04
+(`binaryTargets = ["native", "debian-openssl-3.0.x"]`), el frontend usa URLs
+relativas en producción (`client.ts` y `localSocket.ts` con `import.meta.env.PROD`),
+el socket local (socket.io de `pos.unlink`/`sync.status`) se monta sobre el MISMO
+server :4000, y `tauri.conf.json` abre la webview en `http://127.0.0.1:4000`.
+
+**Por qué:** la regla 4 de `os/DISENO.md` — el kiosco debe arrancar y operar sin
+la nube y sin servidor de desarrollo; que el backend sirva la pantalla y que Tauri
+solo apunte a una URL hace que la pantalla se actualice con el resto del paquete.
+
+**Qué se decidió (consecuencias de diseño):**
+- **Dos puertos de socket según modo:** en producción el socket local vive en el
+  mismo :4000; en desarrollo se mantiene en `LOCAL_SOCKET_PORT` (4001) aparte, como
+  estaba. `startLocalSocket` acepta un server para montarse encima.
+- **SPA en modo history solo para navegadores:** las rutas inexistentes responden
+  `index.html` únicamente a GET con `Accept: text/html`; una API inexistente
+  responde 404 JSON.
+- **`VERSION` es artefacto del release:** en desarrollo no existe el archivo y
+  `/health` responde sin `version`. Lo genera el empaquetado (fase 3).
+- **Imágenes de producto sin token**: se sirven desde el mismo origen, solo
+  `127.0.0.1`; un `<img>` no puede mandar cabecera de autorización.
+- **Tauri no se pudo compilar** en la máquina de desarrollo (sin toolchain Rust);
+  solo se ajustó la configuración. El 401 de `/sync/status` sin sesión es esperado
+  (la pantalla lo consulta al cargar) y no es fallo de esta fase.
+
+**Verificación (modo producción real, hecha por el dueño en :4000):** 200 en
+`/health` con versión y chequeo de BD; `GET /` sirve la pantalla con sus assets;
+`/history` y `/setup` sirven `index.html` solo con `Accept: text/html`; API
+inexistente → 404 JSON; `/products` y `/sales/…` → 401 sin token (las rutas de API
+van antes que la pantalla); socket.io `/ws` conecta por websocket en el mismo
+puerto; la pantalla carga y redirige a `/login` sin peticiones cruzadas.
+`tsc --noEmit`, `vue-tsc --noEmit` y `npm run build` de ambos pasan.
+
+**Siguiente paso:** fase 3 — `os/release/build-release.sh` empaqueta el dist del
+backend + frontend + motor de Prisma Linux y genera `VERSION`; luego las fases 4–6
+(provisión Ubuntu, kiosco, ISO).
 
 ---
 
