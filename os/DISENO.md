@@ -19,6 +19,7 @@ todo se mueve junto y se puede volver atrás.
 
 ```
 /opt/facturero/
+  app/                      binario de la ventana (Tauri) — capa del SO, va en la imagen
   runtime/node-<v>/        Node fijado (no el de apt)
   update-cli/              el actualizador instalado (os/updater copiado por install.sh)
   releases/<versión>/      backend/dist, backend/node_modules (solo producción), backend/prisma,
@@ -31,6 +32,8 @@ todo se mueve junto y se puede volver atrás.
   pos.env                  secretos y configuración del backend (0600, root; lo consume systemd)
   updater.json             URL del manifiesto, comandos de migrar/reiniciar, URL de salud
   release-public.pem       clave PÚBLICA que verifica cada actualización
+  kiosk.env                opciones del kiosco (binario, cursor oculto) — service técnico
+  install-params.env       parámetros del primer arranque desatendido (se borra al terminar)
 /var/lib/facturero/        datos del POS (imágenes descargadas, etc.)
 MySQL local                base pos_db (solo escucha en 127.0.0.1)
 ```
@@ -51,9 +54,6 @@ MySQL local                base pos_db (solo escucha en 127.0.0.1)
 
 - **Fase 3 (`os/release/build-release.sh`)**: construye y firma la versión dentro de `node:22-bookworm-slim` (monta el repo solo lectura). Empaqueta: `backend/dist` compilado, `package*.json`, `node_modules` **solo de producción** con la CLI de prisma, `backend/prisma` (schema + migraciones), `frontend/dist`, y `VERSION`. Correr sin `--key` solo arma el stage; `--smoke` arranca el paquete contra el MySQL del compose local (por `host.docker.internal`) y comprueba `/health` + pantalla. Paquete ~39 MB gzip. Tres trampas resueltas en el script, documentadas en comentarios: (1) prisma pasó a `dependencies` para que `prisma migrate deploy` exista en `node_modules` de producción; (2) `node:22-*-slim` NO trae `openssl` y Prisma entonces detecta "openssl-1.1.x" y no encuentra el motor 3.0.x — el contenedor de build y el smoke instalan `openssl`; (3) Git Bash no puede pasar stdin a `docker.exe` (el script interno va montado como archivo) y `node` de Windows no entiende rutas POSIX (se pasan con `cygpath -w`).
 
-**No probado todavía:** nada de lo que necesita Linux real (systemd, Openbox, autoinstall, MySQL del
-sistema). Las pruebas del actualizador usan carpetas temporales y comandos de mentira.
-
 - **Fase 4 (`os/provision/install.sh` + plantillas)**: aprovisiona el equipo de forma idempotente:
   usuario system `facturero`; Node 22.14.0 fijado en `/opt/facturero/runtime/` bajado de nodejs.org
   con **verificación SHA256** contra `SHASUMS256.txt` (no el node de apt); MySQL solo en `127.0.0.1`
@@ -69,6 +69,13 @@ sistema). Las pruebas del actualizador usan carpetas temporales y comandos de me
   la unidad aporta el `EnvironmentFile` que necesita `prisma migrate deploy`). `migrateCmd` corre
   `prisma migrate deploy` desde `$RELEASE_DIR/backend`; `restartCmd` tolera el primer arranque
   (cuando la unidad aún no está levantada, `systemctl start` como rama del `||`).
+
+- **Fase 5 (`os/kiosk/`)**: autologin del usuario `facturero` en **tty1** vía drop-in de `getty@tty1.service.d` (`agetty --autologin`; el usuario queda con `/bin/bash` para poder iniciar X — ver instalador); `tty2..6`, `ctrl-alt-del.target` y los objetivos de sueño/suspensión enmascarados; `.bash_profile` → `exec startx` (solo si `XDG_VTNR=1`), `.xinitrc` → `openbox-session`, `rc.xml` **sin menú ni binds por defecto** (un solo escritorio); autostart hace `source` de `/etc/facturero/kiosk.env` y lanza `launch.sh`, que **espera `/health` y mantiene la ventana viva** (`/opt/facturero/app/facturero-pos-app`, con reintento a los 2 s si muere), apaga salvapantallas/suspensión (`xset -dpms`) y oculta el cursor si `KIOSK_HIDE_CURSOR=1` (`xsetroot -cursor empty.xbm`). Acceso de servicio técnico: **SSH con clave SOLO desde `--allow-ssh-from CIDR`** en el instalador (ufw: `allow from <cidr> to any port 22`); **nada de contraseñas fijas**.
+
+- **Fase 6 (`os/iso/`)**: `autoinstall.yaml` (subiquity v1, Server 24.04): disco completo LVM, locale es_ES, teclado es, usuario técnico `taller` sin contraseña de login (`allow-pw: false`, clave SSH del parámetro), y `late-commands` que **solo copian** `pos-os/` y los parámetros al destino y habilitan `facturero-firstboot.service` (no se corre `install.sh` en chroot: `systemctl`/MySQL no funcionan ahí). `firstboot.sh` (unidad `Type=oneshot`, `After=network-online.target`): lee `install-params.env` → `install.sh --admin-api-base … --allow-ssh-from …` → `setup-kiosk.sh` → se desactiva y `systemctl reboot` al kiosco. `build-iso.sh` (para Ubuntu, **no Windows**): extrae la ISO con `xorriso -osirrox`, copia `os/` como `pos-os`, sustituye placeholders y añade la entrada grub `autoinstall ds=nocloud\;/s=/cdrom/` (el grub EFI carga el MISMO `boot/grub/grub.cfg`, así que una edición vale para BIOS y UEFI); reconstruye con `xorriso -as mkisofs`. Detalles en `os/iso/REMOSTRADO.md`.
+
+**No probado todavía:** nada de lo que necesita Linux real (systemd, Openbox, autoinstall, MySQL del
+sistema). Las pruebas del actualizador usan carpetas temporales y comandos de mentira.
 
 ## Reglas que salen de este diseño
 
@@ -91,8 +98,8 @@ sistema). Las pruebas del actualizador usan carpetas temporales y comandos de me
 | 3 | Script de construcción de la versión (Linux/Docker) | `os/release/build-release.sh`: compila, instala deps de producción, arma la carpeta que consume `sign-release` | ✅ hecho y probado (build + firma + smoke) |
 | 3b | CI de publicación en GitHub Releases | `.github/workflows/release.yml`: construye al crear `vX.Y.Z`, firma con `RELEASE_SIGNING_KEY` y sube `latest.json` + `.tar.gz` con `gh release create` | ✅ escrito y validado (YAML); **sin ejecutar** |
 | 4 | Aprovisionamiento de Ubuntu (`install.sh`): MySQL, Node fijado, usuario `facturero`, unidades systemd (backend + timer del actualizador), cortafuegos | `os/provision/` | ✅ escrito (`install.sh` + unidades + `updater.json`); **sin probar — VirtualBox** |
-| 5 | Modo kiosco: autologin, Openbox arrancando la ventana, sin TTY ni atajos, reinicio automático si la ventana se cierra | `os/kiosk/` | pendiente — VM |
-| 6 | Instalación desatendida: `autoinstall.yaml` (cloud-init) y remasterizado de la ISO | `os/iso/` | pendiente — necesita la ISO de Ubuntu Server 24.04 |
+| 5 | Modo kiosco: autologin, Openbox arrancando la ventana, sin TTY ni atajos, reinicio automático si la ventana se cierra | `os/kiosk/` | ✅ escrito (`launch.sh`, `setup-kiosk.sh`, `rc.xml`, `empty.xbm`); **sin probar — VM** |
+| 6 | Instalación desatendida: `autoinstall.yaml` (cloud-init) y remasterizado de la ISO | `os/iso/` | ✅ escrito (`autoinstall.yaml`, `firstboot.sh` + unidad, `build-iso.sh`, `REMOSTRADO.md`); **sin probar — necesita ISO + autorización del dueño** |
 | 7 | Publicación en **GitHub Releases** de `facturero/pos` (repo público) + CI que firma y publica al crear una etiqueta `vX.Y.Z` | `.github/workflows/release.yml` | decidido; pendiente de escribir (ver HANDOFF-pos-os.md) |
 | 8 | Icono, nombre del equipo y marca; prueba en hardware real | — | pendiente |
 

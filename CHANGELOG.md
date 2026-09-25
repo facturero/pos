@@ -22,6 +22,31 @@ Pendientes no-código: decisión de IVA en la caja y stock real.
 
 ---
 
+## 2026-09-25 — Sesión: Fases 5 y 6 del OS — kiosco e instalación desatendida
+
+**Fase 5 (`os/kiosk/`)**:
+- `launch.sh`: **espera `/health`** (3 min) y mantiene la ventana viva (`while :; do APP; sleep 2; done`); apaga salvapantallas/suspensión (`xset -dpms s off`); cursor invisible si `KIOSK_HIDE_CURSOR=1` (`xsetroot -cursor empty.xbm`); todo configurable por env en `/etc/facturero/kiosk.env` (`KIOSK_APP_BIN` por defecto `/opt/facturero/app/facturero-pos-app`, `KIOSK_OS_DIR` por defecto `/opt/facturero/os-src`, `KIOSK_LOG`).
+- `setup-kiosk.sh` (idempotente, root): autologin en tty1 vía drop-in `getty@tty1.service.d` con `agetty --autologin facturero`; enmascara `getty@tty{2..6}`, `ctrl-alt-del.target`, `sleep/suspend/hibernate/hybrid-sleep`; `set-default multi-user.target`; `.bash_profile` (`[[ $XDG_VTNR == 1 ]] && exec startx`), `.xinitrc` (`exec openbox-session`), `rc.xml` **sin menú ni binds por defecto** (1 escritorio, solo Alt+F4 y mover ventana), autostart que hace `source` de `kiosk.env` y lanza `launch.sh` en fondo.
+- Efecto colateral en el instalador (fase 4): `facturero` pasó de nologin a `/bin/bash` (autologin lo necesita) y se agregaron `xorg` y `openbox` a los paquetes (los pedía el HANDOFF de la fase 4).
+- Servicio técnico: SSH **con clave** SOLO desde `--allow-ssh-from CIDR` (se agregó la opción a `install.sh`; ufw `allow from CIDR to any port 22 proto tcp`). **Nada de contraseñas fijas.**
+
+**Fase 6 (`os/iso/`)**:
+- `autoinstall.yaml` (subiquity v1, Ubuntu Server 24.04): disco completo LVM, locale es_ES, teclado es, usuario técnico `taller` **sin contraseña de login** (`allow-pw: false`) con clave SSH por parametrización, y `late-commands` que **solo copian** `os/`→`/opt/facturero/os-src` y los parámetros, y habilitan `facturero-firstboot.service` (no se corre `install.sh` en chroot: `systemctl`/MySQL no funcionan allí).
+- `firstboot.sh` + `facturero-firstboot.service` (`Type=oneshot`, `After=network-online.target`, `TimeoutStartSec=1800`): lee `install-params.env` → `install.sh --admin-api-base … --allow-ssh-from …` → `setup-kiosk.sh` → escribe `OS-FIRSTBOOT-DONE` → `systemctl disable --now` → `systemctl reboot` al kiosco.
+- `build-iso.sh` (para Ubuntu del dueño, **NO se ejecuta en Windows**: explicado): extrae la ISO con `xorriso -osirrox`, copia `os/` como `pos-os`, sustituye placeholders (`__HOSTNAME__`, `__SSH_PUB_KEY__`, `__ADMIN_API_BASE__`, `__SSH_ALLOW_FROM__`), añade la entrada de grub `linux /casper/vmlinuz autoinstall ds=nocloud\;/s=/cdrom/ quiet ---` (el grub EFI carga el MISMO `boot/grub/grub.cfg`, una edición vale para BIOS y UEFI) y reconstruye con `xorriso -as mkisofs` (isohybrid MBR + El Torito + EFI).
+- `iso-params.example` como plantilla de parámetros sin valores de producción; `REMOSTRADO.md` con pasos y de qué depende el dueño.
+
+**Por qué:** un cliente no técnico solo recibe la ISO/se enciende; el primer arranque provisiona y deja el kiosco; las actualizaciones ya van por el actualizador de la fase 1 (el SO no se toca más). SSH solo de administración = regla 5 del diseño (nada entra).
+
+**Verificación:** `bash -n` OK en los 5 scripts (Git Bash); `autoinstall.yaml` y `updater.json` validados con Ruby/Psych en contenedor (estructura, 7 `late-commands`, placeholders); `rc.xml` validado con REXML. Sustitución de plantillas (`__NODE_DIR__`, `__SYSTEMCTL__`) simulada y revisada.
+**NO se pudo probar (requiere Linux real / ISO / VM):** apt del sistema, MySQL socket-root, `systemd-analyze verify`, sudoers/visudo reales, ufw, arranque X con Openbox, autologin por agetty, flujo completa: autoinstall → primer arranque → provision → kiosco → actualización por timer. VirtualBox está listo (82 GB libres, 32 GB RAM) y el dueño ya fue avisado para **autorizar la descarga de la ISO y la prueba en VM** (regla 2 del HANDOFF).
+
+**Notas de diseño que se embebieron:** el reintento de `systemctl start` como rama del `||` del `restartCmd` cubre el primer arranque; la primera instalación exige red (baja Node + app); `ADMIN_API_BASE_URL` y el CIDR de SSH **no tienen valores por defecto** en el repo (producción del gateway no se fija sin confirmar el dueño).
+
+**Siguiente paso:** tras el reporte al dueño → autorización → ISO + VM (fases probadas en real). `*` pendientes no-código: icono/marca (fase 8), decisión de IVA y stock (negocio).
+
+---
+
 ## 2026-09-25 — Sesión: Fase 4 del OS — aprovisionamiento de Ubuntu
 
 **Qué se hizo:** `os/provision/` completo:
