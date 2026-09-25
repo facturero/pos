@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Config mínima de Openbox para el kiosco: un solo escritorio, sin menú
+     derecho, sin binds por defecto (nada de Ctrl+Alt+Supr ni conmutación de
+     VT). El dueño puede añadir aquí la combinación oculta para servicio
+     técnico (véase DISENO: "Servicio técnico del kiosco"). -->
+<openbox_config xmlns="http://openbox.org/3.5/rc">
+
+  <desktops>
+    <number>1</number>
+  </desktops>
+
+  <focus>
+    <focusNew>yes</focusNew>
+  </focus>
+
+  <placement>
+    <center>yes</center>
+  </placement>
+
+  <menu>
+    <!-- sin archivo de menú: no hay menú en el clic derecho del fondo -->
+    <file>/dev/null</file>
+  </menu>
+
+  <keyboard>
+    <chainQuitKey>C-g</chainQuitKey>
+    <keybind key="A-F4">
+      <action name="Close"/>
+    </keybind>
+  </keyboard>
+
+  <mouse>
+    <dragThreshold>1</dragThreshold>
+    <context name="Frame">
+      <mousebind button="A-Left" action="Drag">
+        <action name="Move"/>
+      </mousebind>
+      <mousebind button="A-Middle" action="Press">
+        <action name="Lower"/>
+      </mousebind>
+      <mousebind button="A-Right" action="Press">
+        <action name="Unshade"/>
+      </mousebind>
+    </context>
+  </mouse>
+
+</openbox_config>

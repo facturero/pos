@@ -1,4 +1,4 @@
-# Uso: install.sh [--admin-api-base URL] [--country-code CC]
+# Uso: install.sh [--admin-api-base URL] [--country-code CC] [--allow-ssh-from CIDR]
 # Aprovisiona el equipo (capa del SO) y baja la primera versión de la capa de
 # aplicación con el actualizador. Idempotente: repetirlo no regenera secretos,
 # no vuelve a descargar Node ni re-salta migraciones.
@@ -31,10 +31,12 @@ export DEBIAN_FRONTEND=noninteractive
 
 ADMIN_API_BASE=""
 COUNTRY_CODE="EC"
+ALLOW_SSH_FROM=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --admin-api-base) ADMIN_API_BASE="${2:?}"; shift 2 ;;
     --country-code)   COUNTRY_CODE="${2:?}"; shift 2 ;;
+    --allow-ssh-from) ALLOW_SSH_FROM="${2:?}"; shift 2 ;;
     *) die "argumento desconocido: $1" ;;
   esac
 done
@@ -55,20 +57,23 @@ HEALTH_URL="http://127.0.0.1:4000/health"
 
 # --- paquetes del sistema ----------------------------------------------------
 
-log "paquetes base (MySQL, firewall, runtime de la ventana, actualizaciones)"
+log "paquetes base (MySQL, firewall, runtime de la ventana, escritorio kiosco)"
 apt-get update -y
 apt-get install -y --no-install-recommends \
   mysql-server sudo ufw curl ca-certificates openssl tar xz-utils \
   unattended-upgrades \
   libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1 librsvg2-common \
-  libsoup-3.0-0 libjavascriptcoregtk-4.1-0
+  libsoup-3.0-0 libjavascriptcoregtk-4.1-0 \
+  xorg openbox
 
 # --- usuario facturero -------------------------------------------------------
 
 if ! id -u "$FACTURERO_USER" &>/dev/null; then
   log "usuario $FACTURERO_USER"
+  # bash (y no nologin) porque también es el usuario del kiosco: agetty hace
+  # autologin en tty1 y .bash_profile ejecuta startx (fase 5)
   useradd --system --create-home --home-dir "/home/$FACTURERO_USER" \
-    --shell /usr/sbin/nologin "$FACTURERO_USER"
+    --shell /bin/bash "$FACTURERO_USER"
 fi
 
 # --- Node fijado -------------------------------------------------------------
@@ -214,6 +219,11 @@ systemctl enable --now unattended-upgrades
 log "cortafuegos (regla 5: solo salida)"
 ufw default deny incoming
 ufw default allow outgoing
+if [[ -n "$ALLOW_SSH_FROM" ]]; then
+  # SSH de administración SOLO desde la red tallerista (nunca desde 0.0.0.0):
+  # sin contraseña fija, solo claves. Regla real dedupable por ufw.
+  ufw allow from "$ALLOW_SSH_FROM" to any port 22 proto tcp
+fi
 ufw --force enable
 
 log "LISTO — panel en http://127.0.0.1:4000 ; /health responde $(curl -fsS "$HEALTH_URL")"
