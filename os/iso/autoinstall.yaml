@@ -48,16 +48,14 @@ autoinstall:
       GRUB_TIMEOUT=0
       GRUB_TIMEOUT_STYLE=hidden
       GRUB_RECORDFAIL_TIMEOUT=0
-      GRUB_CMDLINE_LINUX_DEFAULT="quiet loglevel=0 systemd.show_status=false vt.global_cursor_default=0"
+      GRUB_CMDLINE_LINUX_DEFAULT="quiet loglevel=0 systemd.show_status=false vt.global_cursor_default=0 fsck.mode=skip console=tty12"
       EOF
     - curtin in-target --target=/target -- update-grub
-    # cloud-init escribe sus mensajes en la consola activa (la pantalla de marca): a un archivo, no a pantalla
-    - mkdir -p /target/etc/cloud/cloud.cfg.d
-    - |
-      cat > /target/etc/cloud/cloud.cfg.d/99-facturero-quiet.cfg <<'EOF'
-      output:
-        all: ">> /var/log/cloud-init-output.log"
-      EOF
+    # cloud-init ya cumplio (el usuario y las claves SSH los puso la instalacion): en el sistema instalado se
+    # desactiva del todo. Si no, en el primer arranque imprime su tabla de claves SSH sobre la pantalla de marca.
+    # console=tty12 (arriba) manda ademas lo que salga por /dev/console a una consola que nadie mira.
+    - mkdir -p /target/etc/cloud
+    - touch /target/etc/cloud/cloud-init.disabled
     # 0) el técnico entra solo por SSH con clave (contraseña bloqueada), así que sudo no puede pedir
     #    contraseña: sin esto no podría administrar el equipo. Está limitado por la red de admin (ufw).
     - echo "taller ALL=(ALL) NOPASSWD:ALL" > /target/etc/sudoers.d/90-taller
