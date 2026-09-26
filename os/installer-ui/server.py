@@ -48,10 +48,10 @@ def read_progress():
                     continue
                 if len(parts) >= 3 and parts[0] == "step" and parts[1].isdigit():
                     # "step n epoch": si el paso se repite (reintento), vale el último inicio
-                    started[int(parts[1])] = int(float(parts[2].split()[0]))
+                    started[int(parts[1])] = float(parts[2].split()[0])   # epoch con decimales (ms)
                     error = None
                 elif parts[0] == "done" and len(parts) >= 2:
-                    finished = int(float(parts[1]))
+                    finished = float(parts[1])
                 elif parts[0] == "error":
                     error = parts[2].strip() if len(parts) > 2 else "error"
     except OSError:
@@ -61,7 +61,7 @@ def read_progress():
 
 def build_status():
     started, finished, error = read_progress()
-    now = int(time.time())
+    now = time.time()
     current = max(started) if started else 0
     steps = []
     for i, label in enumerate(STEPS, start=1):
@@ -69,10 +69,10 @@ def build_status():
             state, secs = "done", None
             if i in started:
                 nxt = started.get(i + 1, finished if finished is not None else now)
-                secs = max(0, (nxt or now) - started[i])
+                secs = round(max(0.0, (nxt or now) - started[i]), 3)
         elif i == current:
             state = "error" if error else "running"
-            secs = max(0, now - started[i])
+            secs = round(max(0.0, now - started[i]), 3)
         else:
             state, secs = "pending", None
         steps.append({"id": i, "label": label, "state": state, "seconds": secs})
