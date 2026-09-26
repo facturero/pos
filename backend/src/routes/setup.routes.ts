@@ -87,6 +87,15 @@ setupRoutes.post("/pair", async (c) => {
 // el admin desde EstablishmentsView con "Desvincular y regenerar", que avisa
 // a este POS por socket.io (evento pos.unlink) para que se desvincule solo.
 setupRoutes.post("/forget", async (c) => {
+  // Con ventas sin enviar no se puede cambiar el emparejamiento: sin las credenciales de este punto de
+  // emision no podrian subirse (y al re-emparejar con OTRO punto se facturarian en el equivocado).
+  const pending = await prisma.sale.count({ where: { synced: false, status: "COMPLETED" } });
+  if (pending > 0) {
+    return c.json(
+      { error: `Hay ${pending} venta(s) sin enviar al CRM. Espera a que se sincronicen antes de cambiar el emparejamiento.` },
+      409,
+    );
+  }
   await prisma.posConfig.deleteMany({ where: { id: 1 } });
   clearSessionCache();
   emitUnlinked(await getDeviceId());

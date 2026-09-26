@@ -2,11 +2,34 @@
 import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
+import { useSetupStore } from "../stores/setup";
+import { ApiError } from "../api/client";
 
 const username = ref("");
 const password = ref("");
 const auth = useAuthStore();
 const router = useRouter();
+const setup = useSetupStore();
+
+// "Volver a ingresar el código": por si se emparejó con un código equivocado. Pide confirmación (no debe
+// pasar por accidente) y el backend lo rechaza si hay ventas sin enviar.
+const confirmingUnpair = ref(false);
+const unpairError = ref<string | null>(null);
+const unpairing = ref(false);
+
+async function unpair() {
+  unpairing.value = true;
+  unpairError.value = null;
+  try {
+    await setup.forget();
+    router.push({ name: "setup" });
+  } catch (err) {
+    unpairError.value = err instanceof ApiError ? err.message : "No se pudo volver a la pantalla del código";
+    confirmingUnpair.value = false;
+  } finally {
+    unpairing.value = false;
+  }
+}
 
 async function handleSubmit() {
   try {
@@ -50,6 +73,38 @@ async function handleSubmit() {
       >
         {{ auth.loading ? "Ingresando..." : "Ingresar" }}
       </button>
+
+      <div class="mt-6 pt-4 border-t border-gray-100 text-center">
+        <p v-if="unpairError" class="text-sm text-red-600 mb-2" role="alert">{{ unpairError }}</p>
+        <button
+          v-if="!confirmingUnpair"
+          type="button"
+          class="text-sm text-gray-500 hover:text-brand-600 underline"
+          @click="confirmingUnpair = true"
+        >
+          ¿Pusiste mal el código? Volver a ingresarlo
+        </button>
+        <div v-else class="text-sm text-gray-600">
+          <p class="mb-3">Este equipo se desvinculará y volverá a pedir el código de 6 dígitos.</p>
+          <div class="flex gap-2">
+            <button
+              type="button"
+              class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg"
+              @click="confirmingUnpair = false"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              :disabled="unpairing"
+              class="flex-1 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white py-2 rounded-lg"
+              @click="unpair"
+            >
+              {{ unpairing ? "Volviendo..." : "Sí, volver" }}
+            </button>
+          </div>
+        </div>
+      </div>
     </form>
   </div>
 </template>

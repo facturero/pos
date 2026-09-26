@@ -46,6 +46,13 @@ export const useSetupStore = defineStore("setup", {
         this.checked = true;
       }
     },
+    // Vuelve a la pantalla del codigo (por si se puso mal). El backend lo rechaza si hay ventas sin enviar.
+    async forget(): Promise<void> {
+      await api.post("/setup/forget");
+      this.paired = false;
+      this.organizationId = null;
+      this.error = null;
+    },
     async pair(code: string): Promise<void> {
       this.loading = true;
       this.error = null;
