@@ -85,8 +85,9 @@ mkdir -p /build/backend
 tar -C /workspace/backend --exclude=node_modules --exclude=dist -cf - . | tar -C /build/backend -xf -
 cd /build/backend
 npm ci --no-audit --no-fund
-npm run build
+# generate ANTES de compilar: tsc necesita los tipos del cliente (no depender del postinstall de npm ci)
 npm run prisma:generate
+npm run build
 rm -rf node_modules
 npm ci --omit=dev --no-audit --no-fund
 # el actualizador corre `prisma migrate deploy` desde node_modules de producción
