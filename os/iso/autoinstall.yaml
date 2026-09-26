@@ -48,7 +48,7 @@ autoinstall:
       GRUB_TIMEOUT=0
       GRUB_TIMEOUT_STYLE=hidden
       GRUB_RECORDFAIL_TIMEOUT=0
-      GRUB_CMDLINE_LINUX_DEFAULT="quiet loglevel=0 systemd.show_status=false vt.global_cursor_default=0 fsck.mode=skip console=tty12"
+      GRUB_CMDLINE_LINUX_DEFAULT="quiet loglevel=0 systemd.show_status=false vt.global_cursor_default=0 fsck.mode=skip console=tty12 modprobe.blacklist=vmwgfx"
       EOF
     - curtin in-target --target=/target -- update-grub
     # cloud-init ya cumplio (el usuario y las claves SSH los puso la instalacion): en el sistema instalado se

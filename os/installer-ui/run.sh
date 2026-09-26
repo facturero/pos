@@ -21,6 +21,7 @@ stop() {
   for f in window openbox xorg server; do
     [[ -f "$RUN/$f.pid" ]] && kill "$(cat "$RUN/$f.pid")" 2>/dev/null
   done
+  [[ -f /run/facturero-firstboot-tui.pid ]] && kill "$(cat /run/facturero-firstboot-tui.pid)" 2>/dev/null
   sleep 1
   rm -rf "$RUN"
   command -v chvt >/dev/null 2>&1 && chvt 1 2>/dev/null
@@ -32,6 +33,9 @@ start() {
   command -v Xorg >/dev/null 2>&1 || { echo "falta Xorg" >> "$LOG"; return 1; }
   [[ -x "$WINDOW" ]] || { echo "falta la ventana $WINDOW" >> "$LOG"; return 1; }
   mkdir -p "$RUN"
+  # la pantalla de texto del primer arranque (iso/firstboot-tui.py) deja paso a la grafica
+  [[ -f /run/facturero-firstboot-tui.pid ]] && kill "$(cat /run/facturero-firstboot-tui.pid)" 2>/dev/null
+  rm -f /run/facturero-firstboot-tui.pid
 
   INSTALLER_PORT="$PORT" nohup python3 "$HERE/server.py" >> "$LOG" 2>&1 &
   echo $! > "$RUN/server.pid"

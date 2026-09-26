@@ -13,8 +13,15 @@ PARAMS=/etc/facturero/install-params.env
 LOG=/var/log/facturero-firstboot.log
 
 exec > >(tee -a "$LOG") 2>&1
-# Pantalla de marca durante la provision (sin texto de consola); Alt+F1 muestra el detalle. No debe fallar.
-sh "$OS_DIR/iso/brand.sh" "Configurando el equipo, esto puede tardar unos minutos..." || true
+# Pantalla de texto con pasos y comandos en vivo mientras no hay entorno grafico (firstboot-tui.py); la cierra
+# installer-ui/run.sh start al abrir la grafica. Si no se puede, la simple de marca. Nada de esto debe fallar.
+mkdir -p /run/facturero-installer-ui
+if command -v python3 >/dev/null 2>&1; then
+  nohup python3 "$OS_DIR/iso/firstboot-tui.py" >/dev/null 2>&1 &
+  echo $! > /run/facturero-firstboot-tui.pid
+else
+  sh "$OS_DIR/iso/brand.sh" "Configurando el equipo, esto puede tardar unos minutos..." || true
+fi
 printf '== primer arranque %s ==\n' "$(date '+%F %T')"
 
 [[ -d "$OS_DIR/provision" ]] || {
