@@ -22,8 +22,10 @@ set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# progress / progress_done / progress_error alimentan la pantalla de instalacion (os/installer-ui)
+. "$SRC/installer-ui/progress.sh"
 log() { printf '\033[1;34m[install]\033[0m %s\n' "$*"; }
-die() { printf '\033[1;31m[install] ERROR:\033[0m %s\n' "$*" >&2; exit 1; }
+die() { printf '\033[1;31m[install] ERROR:\033[0m %s\n' "$*" >&2; progress_error "$*"; exit 1; }
 
 [[ "$(id -u)" -eq 0 ]] || die "corre como root (sudo bash os/provision/install.sh)"
 export DEBIAN_FRONTEND=noninteractive
@@ -56,6 +58,7 @@ HEALTH_URL="http://127.0.0.1:4000/health"
 
 # --- paquetes del sistema ----------------------------------------------------
 
+progress 1
 log "paquetes base (firewall, runtime de la ventana, escritorio kiosco)"
 apt-get update -y
 apt-get install -y --no-install-recommends \
@@ -75,6 +78,23 @@ if ! id -u "$FACTURERO_USER" &>/dev/null; then
     --shell /bin/bash "$FACTURERO_USER"
 fi
 
+# --- ventana del kiosco (Tauri) ---------------------------------------------------
+# Forma parte de la imagen del SO (casi no cambia): la compila os/window/build-window.sh y viaja en la
+# ISO dentro de os/window/out/. Sin ella el kiosco arranca X pero la pantalla queda negra.
+WINDOW_BIN="$SRC/window/out/facturero-pos-app"
+if [[ -f "$WINDOW_BIN" ]]; then
+  install -D -m 0755 "$WINDOW_BIN" "$FACTURERO_APP/app/facturero-pos-app"
+  log "ventana instalada en $FACTURERO_APP/app/facturero-pos-app"
+else
+  log "AVISO: no hay binario de la ventana ($WINDOW_BIN); el kiosco no mostrara nada (os/window/build-window.sh)"
+fi
+
+# --- pantalla de progreso (noahsolutions.com) -----------------------------------
+# Con paquetes de X y la ventana ya instalados, se abre una pantalla con los pasos y la salida en vivo (en
+# vez de texto de consola). Es cosmetica: si falla, la instalacion sigue igual.
+bash "$SRC/installer-ui/run.sh" start || log "AVISO: no se pudo abrir la pantalla de progreso (la instalacion sigue)"
+
+progress 2
 # --- Node fijado -------------------------------------------------------------
 
 mkdir -p "$RUNTIME"
@@ -99,6 +119,7 @@ else
   log "Node ya instalado en $NODE_DIR"
 fi
 
+progress 3
 # --- base de datos: SQLite --------------------------------------------------
 # Un archivo (/var/lib/facturero/pos.db), sin servidor: la crea "prisma migrate deploy" al instalar la primera
 # version y la abre el backend (usuario facturero). No hay contraseña de base de datos ni puerto que proteger.
@@ -162,17 +183,7 @@ sed "s|__SYSTEMCTL__|${SYSTEMCTL_BIN}|g" "$SRC/provision/updater.json" \
 install -m 0640 -o root -g "$FACTURERO_USER" /tmp/updater.json.$$ "$ETC/updater.json"
 rm -f /tmp/updater.json.$$
 
-# --- ventana del kiosco (Tauri) ---------------------------------------------------
-# Forma parte de la imagen del SO (casi no cambia): la compila os/window/build-window.sh y viaja en la
-# ISO dentro de os/window/out/. Sin ella el kiosco arranca X pero la pantalla queda negra.
-WINDOW_BIN="$SRC/window/out/facturero-pos-app"
-if [[ -f "$WINDOW_BIN" ]]; then
-  install -D -m 0755 "$WINDOW_BIN" "$FACTURERO_APP/app/facturero-pos-app"
-  log "ventana instalada en $FACTURERO_APP/app/facturero-pos-app"
-else
-  log "AVISO: no hay binario de la ventana ($WINDOW_BIN); el kiosco no mostrara nada (os/window/build-window.sh)"
-fi
-
+progress 4
 # --- unidades systemd ----------------------------------------------------------
 
 log "unidades systemd"
@@ -191,6 +202,7 @@ chmod 440 /etc/sudoers.d/facturero-updater
 systemctl daemon-reload
 systemctl enable facturero-backend.service facturero-updater.timer
 
+progress 5
 # --- primera versión de la capa de aplicación --------------------------------
 
 # OJO: `readlink -f` sobre una ruta que no existe devuelve la propia ruta (no vacío), asi que
@@ -222,6 +234,7 @@ fi
 systemctl start facturero-updater.timer
 systemctl enable --now unattended-upgrades
 
+progress 6
 # --- cortafuegos ---------------------------------------------------------------
 
 log "cortafuegos (regla 5: solo salida)"
