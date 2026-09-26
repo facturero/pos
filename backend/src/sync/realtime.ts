@@ -79,6 +79,10 @@ async function connect(): Promise<void> {
 
     socket.on("disconnect", (reason) => {
       console.log(`[realtime] desconectado (${reason})`);
+      // reconnection:false (ver arriba): sin esto, una caida del gateway (redespliegue, reinicio del servidor,
+      // corte del tunel) dejaba al POS sordo para siempre y no se enteraba de catalog.changed ni de pos.unlink
+      // hasta reiniciar. Los cierres a proposito (disconnect()) quitan antes los listeners y no llegan aqui.
+      scheduleRetry(`desconectado (${reason})`);
     });
 
     socket.on("connect_error", (err) => {
