@@ -1,5 +1,9 @@
 # Sistema operativo del Facturero (POS) — diseño y estado
 
+> **2026-09-26 — MySQL se reemplazó por SQLite** (Prisma 6.19). Donde más abajo diga MySQL, `pos_db`, contraseña de
+> base de datos o `bind-address`, léase: la base es el archivo `/var/lib/facturero/pos.db` (sin servidor, sin
+> contraseña, sin puerto). Ver `rules.md` (tabla de decisiones) y `CHANGELOG.md`.
+
 Objetivo: que un cliente no técnico reciba un equipo (o una ISO), lo enciende, lo empareja con el
 código de 6 dígitos del CRM y vende. Sin escritorio, sin terminal, sin actualizar nada a mano.
 
@@ -7,7 +11,7 @@ código de 6 dígitos del CRM y vende. Sin escritorio, sin terminal, sin actuali
 
 | Capa | Qué contiene | Cambia | Cómo se actualiza |
 |---|---|---|---|
-| **Imagen del SO** | Ubuntu Server 24.04 LTS, Openbox en modo kiosco, MySQL, runtime de Node, la ventana (Tauri), el actualizador, cortafuegos | Casi nunca | Reinstalar la ISO, o `unattended-upgrades` solo para parches de seguridad |
+| **Imagen del SO** | Ubuntu Server 24.04 LTS, Openbox en modo kiosco, runtime de Node, la ventana (Tauri), el actualizador, cortafuegos | Casi nunca | Reinstalar la ISO, o `unattended-upgrades` solo para parches de seguridad |
 | **Capa de aplicación** | Backend del POS (Node, compilado) + pantalla (Vue compilada) + migraciones de Prisma | Con cada versión del POS | **Actualizador propio** (`os/updater`): paquete firmado → migraciones → cambio de versión → prueba de salud → vuelta atrás si falla |
 
 Por qué un actualizador propio y no el auto-updater de Tauri: el updater de Tauri solo reemplaza el
@@ -35,7 +39,7 @@ todo se mueve junto y se puede volver atrás.
   kiosk.env                opciones del kiosco (binario, cursor oculto) — service técnico
   install-params.env       parámetros del primer arranque desatendido (se borra al terminar)
 /var/lib/facturero/        datos del POS (imágenes descargadas, etc.)
-MySQL local                base pos_db (solo escucha en 127.0.0.1)
+/var/lib/facturero/pos.db  base SQLite (un archivo, modo WAL; la crea prisma migrate deploy)
 ```
 
 ## Lo que ya está hecho y probado (`os/`)
@@ -97,7 +101,7 @@ sistema). Las pruebas del actualizador usan carpetas temporales y comandos de me
 | 2 | Pantalla servida por el backend + `/health` + `binaryTargets` de Prisma | cambios en `pos/backend` y `pos/frontend` | ✅ hecho y probado en modo producción de `:4000` |
 | 3 | Script de construcción de la versión (Linux/Docker) | `os/release/build-release.sh`: compila, instala deps de producción, arma la carpeta que consume `sign-release` | ✅ hecho y probado (build + firma + smoke) |
 | 3b | CI de publicación en GitHub Releases | `.github/workflows/release.yml`: construye al crear `vX.Y.Z`, firma con `RELEASE_SIGNING_KEY` y sube `latest.json` + `.tar.gz` con `gh release create` | ✅ escrito y validado (YAML); **sin ejecutar** |
-| 4 | Aprovisionamiento de Ubuntu (`install.sh`): MySQL, Node fijado, usuario `facturero`, unidades systemd (backend + timer del actualizador), cortafuegos | `os/provision/` | ✅ escrito (`install.sh` + unidades + `updater.json`); **sin probar — VirtualBox** |
+| 4 | Aprovisionamiento de Ubuntu (`install.sh`): Node fijado, usuario `facturero`, unidades systemd (backend + timer del actualizador), cortafuegos | `os/provision/` | ✅ escrito (`install.sh` + unidades + `updater.json`); **sin probar — VirtualBox** |
 | 5 | Modo kiosco: autologin, Openbox arrancando la ventana, sin TTY ni atajos, reinicio automático si la ventana se cierra | `os/kiosk/` | ✅ escrito (`launch.sh`, `setup-kiosk.sh`, `rc.xml`, `empty.xbm`); **sin probar — VM** |
 | 6 | Instalación desatendida: `autoinstall.yaml` (cloud-init) y remasterizado de la ISO | `os/iso/` | ✅ escrito (`autoinstall.yaml`, `firstboot.sh` + unidad, `build-iso.sh`, `REMOSTRADO.md`); **sin probar — necesita ISO + autorización del dueño** |
 | 7 | Publicación en **GitHub Releases** de `facturero/pos` (repo público) + CI que firma y publica al crear una etiqueta `vX.Y.Z` | `.github/workflows/release.yml` | decidido; pendiente de escribir (ver HANDOFF-pos-os.md) |

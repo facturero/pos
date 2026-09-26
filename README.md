@@ -1,7 +1,7 @@
 # POS — arquitectura
 
 ## Resumen
-- **backend/**: Node + TypeScript + Hono + Prisma + MySQL. Corre 100% local
+- **backend/**: Node + TypeScript + Hono + Prisma + SQLite. Corre 100% local
   (127.0.0.1). Actúa como CACHÉ de productos/categorías (sincronizados desde
   el admin) + cola de ventas (generadas localmente, subidas al admin cuando
   hay internet). Ver `backend/src/sync/`.

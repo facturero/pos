@@ -2,7 +2,7 @@
 # Corre UNA SOLA VEZ en el primer arranque tras la instalación desatendida.
 # Lo invoca facturero-firstboot.service (compared por late-commands).
 #  1) lee los parámetros que dejó autoinstall.yaml
-#  2) provisiona el equipo (install.sh: MySQL, Node fijado, unidades, ufw,
+#  2) provisiona el equipo (install.sh: Node fijado, unidades, ufw,
 #     primera actualización de la capa de aplicación)
 #  3) activa el modo kiosco (setup-kiosk.sh)
 #  4) se desactiva a sí mismo y reinicia (para entrar a la sesión X)

@@ -9,7 +9,7 @@ contradice este archivo, el código está mal — no al revés.
 El POS es una **caja registradora física/kiosco**, no un panel de administración.
 - **NO** es la fuente de verdad de productos, precios ni catálogo — eso vive en
   `cmr-proyect` (el CRM), específicamente en `product-service`.
-- **SÍ** es una caché local (MySQL) que se sincroniza *desde* el CRM, y una cola
+- **SÍ** es una caché local (SQLite) que se sincroniza *desde* el CRM, y una cola
   de ventas que se sincroniza *hacia* el CRM cuando hay internet.
 - Debe **funcionar sin internet**. Si el CRM está caído o no hay conexión, el
   POS sigue vendiendo con el último catálogo sincronizado, y encola las ventas.
@@ -24,7 +24,7 @@ El POS es una **caja registradora física/kiosco**, no un panel de administraci�
                │ HTTP a 127.0.0.1:4000
 ┌──────────────▼───────────────┐
 │  Backend local (Hono+Prisma)  │  ← backend/
-│  MySQL local: caché + cola    │
+│  SQLite local: caché + cola   │
 │  Módulo sync/ (pull + push)   │
 └──────────────┬───────────────┘
                │ HTTPS al gateway del CRM (con JWT)
@@ -51,7 +51,7 @@ El POS es una **caja registradora física/kiosco**, no un panel de administraci�
 | Emparejamiento vía TOTP (código de 6 dígitos rotativo), no usuario/contraseña fijo | Más seguro, más fácil para un no-técnico que instale el POS, y define sin ambigüedad a qué organización pertenece cada instalación | `organization-service` + `pos/backend/src/routes/setup.routes.ts` |
 | Emparejamiento de un solo uso | Un punto de emisión emparejado no puede volver a emparejarse sin que un admin lo desvincule explícitamente desde el CRM | `organization-service/src/domain/entities.ts` (`EmissionPoint.markPaired`/`unlinkAndRegenerate`) |
 | IDs sincronizados desde el CRM son UUID (string), no autoincrement | Así los maneja `product-service`/`organization-service` | `prisma/schema.prisma` → campos `remoteId` |
-| MySQL local (no SQLite) para el backend del POS | Más seguro ante manipulación si alguien accede físicamente al equipo, soporta migraciones con Prisma para actualizaciones futuras | decisión explícita del dueño del proyecto |
+| SQLite local (un archivo) para el backend del POS — **reemplazó a MySQL el 2026-09-26** | Un POS es un solo equipo con un solo proceso: no necesita servidor de base de datos. Ahorra RAM y disco, elimina la contraseña de BD, el arranque ordenado y los 10 min de inicialización de MySQL; Prisma 6 (>= 6.2) migra SQLite igual (`migrate deploy`). La seguridad ante acceso físico la da cifrar el disco, no el motor | `prisma/schema.prisma`, `src/db.ts` (WAL, busy_timeout), `os/provision/install.sh` |
 
 ## 4. El flujo de emparejamiento — no lo reimplementes distinto
 

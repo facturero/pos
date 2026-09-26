@@ -6,8 +6,7 @@
 #  - usuario system `facturero`
 #  - Node fijado en /opt/facturero/runtime/node-<v> (de nodejs.org, con SHA256
 #    verificado contra SHASUMS256.txt — no se usa el node de apt, que cambia)
-#  - MySQL local solo en 127.0.0.1, base pos_db, usuario facturero con
-#    contraseña aleatoria (solo vive en /etc/facturero/pos.env)
+#  - base de datos SQLite (/var/lib/facturero/pos.db): un archivo, sin servidor ni contraseña
 #  - /etc/facturero/pos.env: DATABASE_URL, JWT_SECRET, PORT, rutas de la pantalla
 #    e imágenes; ADMIN_API_BASE_URL solo se escribe si se pasa --admin-api-base
 #    (sin valor por defecto: si falta, el backend convive sin gateway, como se
@@ -57,10 +56,10 @@ HEALTH_URL="http://127.0.0.1:4000/health"
 
 # --- paquetes del sistema ----------------------------------------------------
 
-log "paquetes base (MySQL, firewall, runtime de la ventana, escritorio kiosco)"
+log "paquetes base (firewall, runtime de la ventana, escritorio kiosco)"
 apt-get update -y
 apt-get install -y --no-install-recommends \
-  mysql-server sudo ufw curl ca-certificates openssl tar xz-utils \
+  sqlite3 sudo ufw curl ca-certificates openssl tar xz-utils \
   unattended-upgrades \
   libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1 librsvg2-common \
   libsoup-3.0-0 libjavascriptcoregtk-4.1-0 \
@@ -100,22 +99,11 @@ else
   log "Node ya instalado en $NODE_DIR"
 fi
 
-# --- MySQL (solo 127.0.0.1) --------------------------------------------------
-
-log "MySQL local"
-systemctl enable --now mysql.service
-mysqladmin ping --silent || die "MySQL no respondio"
-
-# drop-in fija el bind-address de forma idempotente. mysqld.cnf trae por
-# defecto 127.0.0.1, pero lo dejamos explícito para que no dependa de ello.
-install -d /etc/mysql/mysql.conf.d
-if [[ ! -f /etc/mysql/mysql.conf.d/facturero.cnf ]]; then
-  cat > /etc/mysql/mysql.conf.d/facturero.cnf <<'EOF'
-[mysqld]
-bind-address = 127.0.0.1
-EOF
-  systemctl restart mysql.service
-fi
+# --- base de datos: SQLite --------------------------------------------------
+# Un archivo (/var/lib/facturero/pos.db), sin servidor: la crea "prisma migrate deploy" al instalar la primera
+# version y la abre el backend (usuario facturero). No hay contraseña de base de datos ni puerto que proteger.
+DB_DIR="/var/lib/facturero"
+mkdir -p "$DB_DIR"
 
 # --- secretos y pos.env ------------------------------------------------------
 
@@ -126,32 +114,18 @@ mkdir -p "$ETC"
 chown root:"$FACTURERO_USER" "$ETC"
 chmod 750 "$ETC"
 
-if [[ -f "$ETC/pos.env" ]]; then
-  # no regenerar secretos: la contraseña y JWT_SEcret viven SOLO en pos.env
-  DB_PASS="$(sed -n 's|^DATABASE_URL=mysql://facturero:\([^@]*\)@127.0.0.1:3306/pos_db$|\1|p' "$ETC/pos.env")"
-  [[ -n "$DB_PASS" ]] || die "pos.env existe pero no trae DATABASE_URL; revísalo a mano"
-else
-  DB_PASS="$(openssl rand -hex 24)"
+# no regenerar secretos: el JWT_SECRET vive SOLO en pos.env
+if [[ ! -f "$ETC/pos.env" ]]; then
   JWT_SECRET="$(openssl rand -hex 32)"
 fi
-
-DB_EXISTS="$(mysql -N -s -e "SELECT COUNT(*) FROM mysql.user WHERE user='facturero' AND host='127.0.0.1'")"
-mysql -e "CREATE DATABASE IF NOT EXISTS pos_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-if [[ "$DB_EXISTS" == "0" ]]; then
-  mysql -e "CREATE USER 'facturero'@'127.0.0.1' IDENTIFIED BY '${DB_PASS}'"
-else
-  # realinea la contraseña por si un arranque anterior quedó a medias
-  mysql -e "ALTER USER 'facturero'@'127.0.0.1' IDENTIFIED BY '${DB_PASS}'"
-fi
-mysql -e "GRANT ALL PRIVILEGES ON pos_db.* TO 'facturero'@'127.0.0.1'"
-mysql -e "FLUSH PRIVILEGES"
 
 if [[ ! -f "$ETC/pos.env" ]]; then
   umask 077
   cat > "$ETC/pos.env" <<EOF
 NODE_ENV=production
 PORT=4000
-DATABASE_URL=mysql://facturero:${DB_PASS}@127.0.0.1:3306/pos_db
+# connection_limit=1: SQLite admite un escritor a la vez; una sola conexion evita 'database is locked'
+DATABASE_URL=file:${DB_DIR}/pos.db?connection_limit=1
 JWT_SECRET=${JWT_SECRET}
 POS_FRONTEND_DIST=${FACTURERO_APP}/current/frontend/dist
 POS_IMAGES_DIR=${DATA}
@@ -172,7 +146,8 @@ fi
 # --- datos y actualizador -----------------------------------------------------
 
 mkdir -p "$DATA" "$FACTURERO_APP/releases"
-chown -R "$FACTURERO_USER:$FACTURERO_USER" "$FACTURERO_APP" "$DATA"
+chown -R "$FACTURERO_USER:$FACTURERO_USER" "$FACTURERO_APP" "$DATA" "$DB_DIR"
+chmod 750 "$DB_DIR"
 
 install -d "$UPDATE_CLI"
 install -m 0644 "$SRC/updater/updater.mjs" "$SRC/updater/cli.mjs" "$UPDATE_CLI/"
@@ -214,7 +189,7 @@ printf '%s ALL=(root) NOPASSWD: %s restart facturero-backend, %s start facturero
 chmod 440 /etc/sudoers.d/facturero-updater
 
 systemctl daemon-reload
-systemctl enable mysql.service facturero-backend.service facturero-updater.timer
+systemctl enable facturero-backend.service facturero-updater.timer
 
 # --- primera versión de la capa de aplicación --------------------------------
 

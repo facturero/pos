@@ -48,7 +48,7 @@ Marca con [x] cuando esté hecho Y validado (no solo escrito).
   - [ ] ISO de Ubuntu con `autoinstall.yaml`
   - [ ] Modo kiosco (Openbox, autologin, sin escritorio)
   - [ ] Lockdown (deshabilitar TTYs, atajos de teclado, firewall)
-  - [ ] Script/servicio systemd que instale MySQL + backend + frontend +
+  - [ ] Script/servicio systemd que instale backend (SQLite) + frontend +
         launcher con auto-updater al primer arranque
   - [ ] Separación en dos partes: imagen de OS (cambia poco) + capa de app
         que se auto-actualiza sola (tipo Discord), ya decidido en la

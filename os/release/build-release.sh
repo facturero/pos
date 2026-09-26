@@ -10,7 +10,7 @@
 #
 # Sin --key solo arma el stage (idóneo para probar sin la clave privada, que
 # no viaja en el repo). --smoke arranca el backend del stage dentro de un
-# contenedor contra el MySQL del compose local (DATABASE_URL de backend/.env,
+# contenedor con una base SQLite temporal (aplica las migraciones y comprueba /health,
 # sin imprimirla) y comprueba /health y que sirve la pantalla.
 #
 # Por qué en un contenedor Linux: el paquete debe llevar los motores nativos de
@@ -91,6 +91,12 @@ rm -rf node_modules
 npm ci --omit=dev --no-audit --no-fund
 # el actualizador corre `prisma migrate deploy` desde node_modules de producción
 [ -x node_modules/.bin/prisma ] || { echo "FALTA la CLI de prisma en prod" >&2; exit 1; }
+# Prisma 6 trae en runtime/ los motores WASM de TODAS las bases (postgres, mysql, sqlserver...) y variantes
+# edge: ~70 MB que no se usan con el motor nativo (libquery_engine .so.node, el del equipo). La prueba
+# --smoke (migrate deploy + arranque) confirma que no hacian falta.
+# (sin parentesis ni : este bloque va dentro de un heredoc que el shell expande)
+find node_modules/@prisma/client/runtime -type f -name '*wasm-base64*' -delete
+find node_modules/@prisma/client/runtime -type f -name '*.wasm' -delete
 
 # --- frontend ---
 mkdir -p /build/frontend
@@ -149,26 +155,18 @@ else
 fi
 
 if [ -n "$SMOKE" ]; then
-  # smoke: arranca el backend del stage contra el MySQL del compose local
-  # (host.docker.internal), SIN publicar puertos: se prueba dentro del contenedor.
-  if [ ! -f "$REPO_ROOT/backend/.env" ]; then
-    echo "WARN: --smoke necesita backend/.env (DATABASE_URL) para el MySQL local; se omite" >&2
-    exit 0
-  fi
-  DB_URL="$(sed -n 's/^DATABASE_URL=//p' "$REPO_ROOT/backend/.env" | head -n1 | tr -d '"')"
-  if [ -z "$DB_URL" ]; then echo "WARN: backend/.env sin DATABASE_URL; se omite --smoke" >&2; exit 0; fi
-  # dentro del contenedor el "localhost" del .env debe ser el host (no se imprime la URL)
-  DB_URL_SMOKE="$(printf '%s' "$DB_URL" | sed -E 's#@(localhost|127\.0\.0\.1):#@host.docker.internal:#')"
-
+  # smoke: aplica las migraciones en una base SQLite TEMPORAL dentro del contenedor y arranca el backend del
+  # stage, SIN publicar puertos. Prueba justo lo que hara el actualizador en el equipo (prisma migrate deploy
+  # con los motores de Linux) y que /health y la pantalla responden.
   CTN="pos-smoke-${TAG}"
   docker rm -f "$CTN" >/dev/null 2>&1 || true
   # igual que en el build: sin openssl Prisma detectaría 1.1.x y no arrancaría
   docker run -d --name "$CTN" \
     -v "${STAGE_HOST}:/opt/current:ro" \
-    -e DATABASE_URL="$DB_URL_SMOKE" \
+    -e DATABASE_URL="file:/tmp/smoke.db?connection_limit=1" \
     -e PORT=4000 \
     -e POS_FRONTEND_DIST=/opt/current/frontend/dist \
-    node:22-bookworm-slim bash -c "apt-get update -qq >/dev/null && apt-get install -y -qq openssl >/dev/null && exec node /opt/current/backend/dist/index.js" >/dev/null
+    node:22-bookworm-slim bash -c "apt-get update -qq >/dev/null && apt-get install -y -qq openssl >/dev/null && cd /opt/current/backend && ./node_modules/.bin/prisma migrate deploy && exec node dist/index.js" >/dev/null
   trap 'docker rm -f "$CTN" >/dev/null 2>&1 || true' EXIT
 
   ok=false

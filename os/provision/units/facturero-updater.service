@@ -1,8 +1,8 @@
 [Unit]
 Description=Facturero POS — actualizador de la capa de aplicación
 # Lo invoca el timer (cada hora) o install.sh para la primera instalación.
-After=network-online.target mysql.service
-Wants=mysql.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot
