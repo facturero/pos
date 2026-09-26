@@ -1,3 +1,4 @@
 
 # binario de la ventana compilado (lo genera os/window/build-window.sh)
 os/window/out/
+__pycache__/
