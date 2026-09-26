@@ -62,23 +62,25 @@ if [[ -n "$RELEASE_PUBLIC_KEY" ]]; then
 fi
 [[ -f "$WORK/iso/pos-os/release/release-public.pem" ]] || die "falta la clave pública (RELEASE_PUBLIC_KEY o os/release/release-public.pem)"
 
-echo "== inyectando la entrada de grub (BIOS y EFI usan el mismo grub.cfg) =="
-xorriso -osirrox on -indev "$ISO" -extract /boot/grub/grub.cfg "$WORK/iso/boot/grub/grub.cfg" >/dev/null 2>&1
-chmod u+rw "$WORK/iso/boot/grub/grub.cfg"
-cat >> "$WORK/iso/boot/grub/grub.cfg" <<'EOF'
+echo "== grub: menu con UNA sola entrada (Instalar Facturero) =="
+# Se REEMPLAZA el grub.cfg de Ubuntu (Try or Install, HWE, memtest, UEFI settings...) por uno propio con una
+# sola opcion: quien instala no debe elegir nada ni ver menus de Ubuntu. BIOS y EFI leen el mismo grub.cfg.
+# Arranca sola a los 5 s (tiempo de sobra para retirar el USB si se puso en un equipo por error: la
+# instalacion borra el disco entero). Sin la palabra "autoinstall" subiquity pide confirmacion a mano.
+cat > "$WORK/iso/boot/grub/grub.cfg" <<'EOF'
+set timeout=5
+set default=facturero-auto
 
-menuentry "Instalar Facturero (desatendida) — autoinstall" --id facturero-auto {
+loadfont unicode
+
+set menu_color_normal=white/black
+set menu_color_highlight=black/light-gray
+
+menuentry "Instalar Facturero POS" --id facturero-auto {
+    set gfxpayload=keep
     linux /casper/vmlinuz autoinstall ds=nocloud\;s=/cdrom/ quiet ---
     initrd /casper/initrd
 }
-EOF
-# La entrada por defecto se elige por ID, NO por índice: parte de las entradas del grub.cfg original
-# están dentro de `if` (EFI o BIOS) y el índice cambia según la plataforma; un índice fuera de rango
-# cae en la entrada 0 (instalación normal, que pide confirmación). La instalación arranca sola a los 5 s.
-cat >> "$WORK/iso/boot/grub/grub.cfg" <<EOF
-
-set default=facturero-auto
-set timeout=5
 EOF
 
 # Se reescribe la ISO base con "-boot_image any replay": xorriso conserva EXACTAMENTE el arranque
