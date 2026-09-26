@@ -40,7 +40,7 @@ SSH_ARGS=()
 net_ok() { getent hosts archive.ubuntu.com >/dev/null 2>&1 && getent hosts github.com >/dev/null 2>&1   && timeout 6 bash -c 'exec 3<>/dev/tcp/archive.ubuntu.com/80' 2>/dev/null; }   # curl aun no esta instalado
 waited=0
 until net_ok; do
-  echo "[install] Sin conexion a internet: conecta el cable de red. Se reintenta solo (${waited}s)"
+  (( waited % 30 == 0 )) && echo "[install] Sin conexion a internet: conecta el cable de red. Se reintenta solo (${waited}s)"
   sleep 5; waited=$((waited + 5))
 done
 [[ $waited -gt 0 ]] && echo "[install] Conexion a internet lista"
