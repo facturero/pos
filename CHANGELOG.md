@@ -240,6 +240,24 @@ instalador/OS (parado en el TODO).
 
 ---
 
+## 2026-09-26 — Sesión: SQLite, ventana Tauri, ISO instalable
+
+**SQLite en lugar de MySQL (Prisma 6.19).** Decisión del dueño: un POS es un solo equipo con un solo proceso, no
+necesita servidor de BD. Cambia `rules.md` (fila de decisiones) y **anula** lo que este archivo diga de MySQL
+más abajo. La base es un archivo (`/var/lib/facturero/pos.db` en el equipo; `backend/data/pos.db` en desarrollo),
+con WAL + `busy_timeout` (`src/db.ts`) y `connection_limit=1`. Las migraciones de MySQL se descartaron (no había
+equipos instalados) y hay una migración base nueva. Consecuencias a recordar: búsquedas con `contains` no ignoran
+acentos como MySQL (`cafe` ≠ `café`); los decimales de dinero se guardan como flotantes, pero todo el cálculo va en
+centavos redondeados (paridad 40/40 con billing).
+
+**Volver a ingresar el código de emparejamiento** desde el login (`POST /setup/forget`, rechazado con 409 si hay
+ventas sin enviar). No desvincula del lado del CRM.
+
+**Ventana Tauri del kiosco** compilada en Docker (`os/window/`, 3,5 MB, sin plugin updater de Tauri: la app se
+actualiza con `os/updater`). **ISO instalable** (`os/iso/`, `build-iso-docker.sh`) probada en VirtualBox: instala
+Ubuntu 24.04.5 sola, aprovisiona, entra al kiosco y muestra el emparejamiento. Faltan: publicar la release en
+GitHub, logo real, arranque sin textos de consola.
+
 ## 2026-09-25 — Sesión: imágenes de producto, historial por días
 
 **Imágenes:** `product-service` ya devuelve `imageFileId` (imagen principal) en `GET /products`. El POS
