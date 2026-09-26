@@ -6,6 +6,7 @@ import { useAuthStore } from "./stores/auth";
 import { useSyncStore } from "./stores/sync";
 import { useSetupStore } from "./stores/setup";
 import Icon from "./components/Icon.vue";
+import StatusBar from "./components/StatusBar.vue";
 
 const auth = useAuthStore();
 const sync = useSyncStore();
@@ -96,5 +97,7 @@ function handleLogout() {
     <main class="flex-1 min-h-0">
       <router-view />
     </main>
+
+    <StatusBar />
   </div>
 </template>

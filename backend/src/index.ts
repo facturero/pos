@@ -15,6 +15,8 @@ import { cashSessionRoutes } from "./routes/cash-sessions.routes.js";
 import { customerRoutes } from "./routes/customers.routes.js";
 import { syncRoutes } from "./routes/sync.routes.js";
 import { setupRoutes } from "./routes/setup.routes.js";
+import { systemRoutes } from "./routes/system.routes.js";
+import { version } from "./version.js";
 import { startSyncScheduler } from "./sync/scheduler.js";
 import { startRealtime } from "./sync/realtime.js";
 import { startLocalSocket } from "./local/socket.js";
@@ -27,20 +29,6 @@ app.use("*", logger());
 // Solo escucha en localhost, así que CORS aquí es únicamente para que la
 // webview de Tauri (origen distinto) pueda llamar a esta API.
 app.use("*", cors());
-
-// Versión de la instalación (archivo VERSION junto al dist, lo genera el
-// release). El actualizador la usa para decidir si la versión que bajó es la
-// que realmente quedó activa. En desarrollo no existe el archivo: sin versión.
-function readVersion(): string | undefined {
-  try {
-    const value = readFileSync(new URL("./VERSION", import.meta.url), "utf8").trim();
-    return value.length > 0 ? value : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-const version = readVersion();
 
 app.get("/health", async (c) => {
   try {
@@ -63,6 +51,7 @@ app.route("/cash-sessions", cashSessionRoutes);
 app.route("/customers", customerRoutes);
 app.route("/sync", syncRoutes);
 app.route("/setup", setupRoutes);
+app.route("/system", systemRoutes);
 
 // En producción el backend sirve también la pantalla compilada (un solo
 // origen; la ventana de Tauri solo abre http://127.0.0.1:4000). Sin
