@@ -2,3 +2,6 @@
 # (Windows) un checkout los dejaba con CRLF y bash fallaba con ": command not found".
 os/** text eol=lf
 *.sh text eol=lf
+# Prisma calcula el checksum de cada migracion sobre su contenido: con CRLF (autocrlf en Windows) el mismo
+# archivo tendria otro checksum que en Linux y "migrate deploy" se quejaria de migraciones modificadas.
+backend/prisma/migrations/** text eol=lf

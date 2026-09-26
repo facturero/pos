@@ -18,7 +18,8 @@ import { setupRoutes } from "./routes/setup.routes.js";
 import { startSyncScheduler } from "./sync/scheduler.js";
 import { startRealtime } from "./sync/realtime.js";
 import { startLocalSocket } from "./local/socket.js";
-import { prisma } from "./db.js";
+import { prisma, initDatabase } from "./db.js";
+import { diagnoseDbError } from "./db-guide.js";
 
 const app = new Hono();
 
@@ -86,6 +87,15 @@ if (frontendDist) {
       return c.json({ error: "No encontrado" }, 404);
     }
   });
+}
+
+// Ajustes de SQLite (WAL, busy_timeout) antes de atender nada. Si la base no abre, se dice QUE hacer.
+try {
+  await initDatabase();
+} catch (err) {
+  const issue = diagnoseDbError(err);
+  console.error(`[db] no se pudo abrir la base de datos: ${issue.guide ?? (err instanceof Error ? err.message : err)}`);
+  process.exit(1);
 }
 
 const port = Number(process.env.PORT ?? 4000);

@@ -1,5 +1,5 @@
 // Esquema del POS local.
-// MySQL aquí funciona como CACHÉ + cola de ventas, no como fuente de verdad:
+// SQLite (un solo archivo local) funciona como CACHÉ + cola de ventas, no como fuente de verdad:
 // - products/categories: se sincronizan DESDE el admin (remoteId los vincula).
 // - sales/sale_items: se generan LOCALMENTE y se empujan HACIA el admin
 //   (campo `synced` + `syncedAt` llevan el control).
@@ -15,7 +15,7 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -170,10 +170,10 @@ model Product {
   barcode      String?  @unique // uso futuro; product-service no lo maneja aún
   name         String
   description  String?
-  price        Decimal  @db.Decimal(10, 2)
+  price        Decimal
   currencyCode String   @default("USD")
-  cost         Decimal? @db.Decimal(10, 2) // no viene del admin todavía; reservado
-  stock        Decimal  @default(0) @db.Decimal(10, 3) // sin control real aún (ver README)
+  cost         Decimal? // no viene del admin todavía; reservado
+  stock        Decimal  @default(0) // sin control real aún (ver README)
   unit         String   @default("unidad")
   active       Boolean  @default(true)
   // Impuestos: cada producto tiene los SUYOS (IVA 15%, IVA 0%, no objeto...), no hay una
@@ -203,9 +203,9 @@ model CashSession {
   userId         Int
   openedAt       DateTime          @default(now())
   closedAt       DateTime?
-  openingAmount  Decimal           @db.Decimal(10, 2)
-  closingAmount  Decimal?          @db.Decimal(10, 2)
-  expectedAmount Decimal?          @db.Decimal(10, 2)
+  openingAmount  Decimal
+  closingAmount  Decimal?
+  expectedAmount Decimal?
   status         CashSessionStatus @default(OPEN)
   notes          String?
 
@@ -221,10 +221,10 @@ model Sale {
   cashSessionId Int
   userId        Int
   customerId    Int?
-  subtotal      Decimal       @db.Decimal(10, 2)
-  tax           Decimal       @default(0) @db.Decimal(10, 2)
-  discount      Decimal       @default(0) @db.Decimal(10, 2)
-  total         Decimal       @db.Decimal(10, 2)
+  subtotal      Decimal
+  tax           Decimal       @default(0)
+  discount      Decimal       @default(0)
+  total         Decimal
   paymentMethod PaymentMethod @default(CASH)
   status        SaleStatus    @default(COMPLETED)
 
@@ -253,13 +253,13 @@ model SaleItem {
   id        Int     @id @default(autoincrement())
   saleId    Int
   productId Int
-  quantity  Decimal @db.Decimal(10, 3)
-  unitPrice Decimal @db.Decimal(10, 2) // precio del catalogo (con IVA si priceIncludesTax)
+  quantity  Decimal
+  unitPrice Decimal // precio del catalogo (con IVA si priceIncludesTax)
   // subtotal = base imponible de la linea SIN impuestos y ya descontada (igual que la
   // linea de la factura del CRM). El descuento de la venta se reparte entre lineas.
-  subtotal  Decimal @db.Decimal(10, 2)
-  discount  Decimal @default(0) @db.Decimal(10, 2) // parte del descuento de la venta en esta linea
-  taxAmount Decimal @default(0) @db.Decimal(10, 2) // suma de los impuestos de la linea
+  subtotal  Decimal
+  discount  Decimal @default(0) // parte del descuento de la venta en esta linea
+  taxAmount Decimal @default(0) // suma de los impuestos de la linea
   taxes     Json? // desglose: [{ kind, percentage, baseCents, amountCents }]
 
   sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
@@ -293,7 +293,7 @@ model PosConfig {
   organizationId  String
   establishmentId String
   emissionPointId String
-  refreshToken    String   @db.Text // se rota en cada refresh; siempre el último válido
+  refreshToken    String // se rota en cada refresh; siempre el último válido
   pairedAt        DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
