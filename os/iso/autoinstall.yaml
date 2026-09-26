@@ -26,11 +26,20 @@ autoinstall:
   storage:
     layout:
       name: lvm
-  # Marca en pantalla: en cuanto arranca el instalador se cambia a una consola limpia con el nombre y se oculta
-  # el texto de subiquity (sigue en la consola 1: Alt+F1 si algo falla). Nunca debe impedir instalar (|| true).
+  # Cada evento de la instalacion se avisa a un servidor LOCAL que lanza start-screen.sh (install-tui.py): asi la
+  # pantalla muestra pasos a la izquierda y los comandos en vivo a la derecha. El texto de subiquity sigue en la
+  # consola 1 (Alt+F1 si algo falla). Si el servidor no esta, el aviso simplemente se pierde.
+  reporting:
+    facturero:
+      type: webhook
+      endpoint: http://127.0.0.1:8765/events
+  # Pantalla de instalacion: primero la marca simple (brand.sh) y encima la pantalla dividida (install-tui.py).
+  # Es cosmetica: nunca debe impedir instalar (|| true).
   early-commands:
-    - sh /cdrom/pos-os/iso/brand.sh "Instalando el sistema..." || true
+    - sh /cdrom/pos-os/iso/start-screen.sh || true
   late-commands:
+    # el registro de eventos crudos se guarda en el equipo instalado (sirve para ajustar la pantalla)
+    - cp /run/facturero-install-events.log /target/var/log/facturero-installer-events.log || true
     # sistema instalado: sin menu de grub ni mensajes al arrancar (la pantalla la cubre brand.sh en el
     # primer arranque y el kiosco despues)
     - mkdir -p /target/etc/default/grub.d
