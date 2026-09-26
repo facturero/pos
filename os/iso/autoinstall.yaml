@@ -26,7 +26,29 @@ autoinstall:
   storage:
     layout:
       name: lvm
+  # Marca en pantalla: en cuanto arranca el instalador se cambia a una consola limpia con el nombre y se oculta
+  # el texto de subiquity (sigue en la consola 1: Alt+F1 si algo falla). Nunca debe impedir instalar (|| true).
+  early-commands:
+    - sh /cdrom/pos-os/iso/brand.sh "Instalando el sistema..." || true
   late-commands:
+    # sistema instalado: sin menu de grub ni mensajes al arrancar (la pantalla la cubre brand.sh en el
+    # primer arranque y el kiosco despues)
+    - mkdir -p /target/etc/default/grub.d
+    - |
+      cat > /target/etc/default/grub.d/99-facturero.cfg <<'EOF'
+      GRUB_TIMEOUT=0
+      GRUB_TIMEOUT_STYLE=hidden
+      GRUB_RECORDFAIL_TIMEOUT=0
+      GRUB_CMDLINE_LINUX_DEFAULT="quiet loglevel=0 systemd.show_status=false vt.global_cursor_default=0"
+      EOF
+    - curtin in-target --target=/target -- update-grub
+    # cloud-init escribe sus mensajes en la consola activa (la pantalla de marca): a un archivo, no a pantalla
+    - mkdir -p /target/etc/cloud/cloud.cfg.d
+    - |
+      cat > /target/etc/cloud/cloud.cfg.d/99-facturero-quiet.cfg <<'EOF'
+      output:
+        all: ">> /var/log/cloud-init-output.log"
+      EOF
     # 0) el técnico entra solo por SSH con clave (contraseña bloqueada), así que sudo no puede pedir
     #    contraseña: sin esto no podría administrar el equipo. Está limitado por la red de admin (ufw).
     - echo "taller ALL=(ALL) NOPASSWD:ALL" > /target/etc/sudoers.d/90-taller

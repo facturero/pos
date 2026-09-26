@@ -24,7 +24,7 @@ install -d /etc/systemd/system/getty@tty1.service.d
 cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf <<EOF
 [Service]
 ExecStart=
-ExecStart=-/sbin/agetty --autologin ${KIOSK_USER} --noclear %I \$TERM
+ExecStart=-/sbin/agetty --autologin ${KIOSK_USER} --noclear --noissue --nohints %I \$TERM
 EOF
 
 # --- sin TTY alternativos ni atajos de consola --------------------------------
