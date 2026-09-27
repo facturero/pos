@@ -28,10 +28,11 @@ async function handleGlobalKeydown(e: KeyboardEvent): Promise<void> {
 }
 
 onMounted(() => {
+  // primero, para que un fallo en lo de abajo no impida registrar el listener del teclado
+  window.addEventListener("keydown", handleGlobalKeydown);
   auth.restoreSession();
   setup.startUnlinkListener();
   sync.startSyncListener();
-  window.addEventListener("keydown", handleGlobalKeydown);
 });
 
 onUnmounted(() => {
