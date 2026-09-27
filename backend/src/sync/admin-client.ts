@@ -304,6 +304,18 @@ export async function fetchRemoteFileUrl(fileId: string): Promise<{ url: string;
   return request<{ url: string; mimeType: string }>(`/files/${encodeURIComponent(fileId)}/url`);
 }
 
+// Autoservicio: el propio POS desvincula SU punto de emisión en el CRM (misma ruta que usa el admin desde
+// EstablishmentsView). El token del dispositivo lleva los permisos del rol Administrador (incluye
+// establishment:update, ver issueDeviceSession en auth-service), y como establishmentId/emissionPointId
+// vienen del PosConfig de ESTE equipo, nunca puede pedir el unlink de un punto que no sea el suyo. Se llama
+// desde /setup/forget (botón "Volver a ingresarlo"), antes de borrar el emparejamiento local: así el punto
+// vuelve a quedar disponible en el CRM (con un código nuevo) sin depender de que un admin lo libere a mano.
+export async function unlinkRemoteEmissionPoint(establishmentId: string, emissionPointId: string): Promise<void> {
+  await request(`/establishments/${encodeURIComponent(establishmentId)}/billing-points/${encodeURIComponent(emissionPointId)}/unlink`, {
+    method: "POST",
+  });
+}
+
 export async function fetchRemoteCategories(): Promise<RemoteCategory[]> {
   return request<RemoteCategory[]>(`/categories`);
 }

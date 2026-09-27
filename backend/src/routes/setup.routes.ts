@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { prisma } from "../db.js";
-import { pairWithCode, primeTokenCache, clearSessionCache, AdminApiError } from "../sync/admin-client.js";
+import { pairWithCode, primeTokenCache, clearSessionCache, unlinkRemoteEmissionPoint, AdminApiError } from "../sync/admin-client.js";
 import { runSyncCycle } from "../sync/scheduler.js";
 import { connectRealtime } from "../sync/realtime.js";
 import { getDeviceId } from "../device-identity.js";
@@ -82,10 +82,10 @@ setupRoutes.post("/pair", async (c) => {
   }
 });
 
-// "Olvidar" el emparejamiento localmente (por si se necesita reconfigurar
-// desde cero en este equipo). NO desvincula del lado del CRM — eso lo hace
-// el admin desde EstablishmentsView con "Desvincular y regenerar", que avisa
-// a este POS por socket.io (evento pos.unlink) para que se desvincule solo.
+// "Olvidar" el emparejamiento: por si se emparejó con un código equivocado (LoginView, "Volver a
+// ingresarlo"). Además de borrar el par local, desvincula ESTE MISMO punto en el CRM (autoservicio: el
+// token del dispositivo ya tiene permiso, ver unlinkRemoteEmissionPoint) para que quede libre con un
+// código nuevo sin depender de que un admin lo haga a mano desde EstablishmentsView.
 setupRoutes.post("/forget", async (c) => {
   // Con ventas sin enviar no se puede cambiar el emparejamiento: sin las credenciales de este punto de
   // emision no podrian subirse (y al re-emparejar con OTRO punto se facturarian en el equivocado).
@@ -95,6 +95,17 @@ setupRoutes.post("/forget", async (c) => {
       { error: `Hay ${pending} venta(s) sin enviar al CRM. Espera a que se sincronicen antes de cambiar el emparejamiento.` },
       409,
     );
+  }
+  const config = await prisma.posConfig.findUnique({ where: { id: 1 } });
+  if (config) {
+    try {
+      await unlinkRemoteEmissionPoint(config.establishmentId, config.emissionPointId);
+    } catch (err) {
+      // Sin internet, o el punto ya no existe/ya está desvinculado: no bloquea el olvido local (el
+      // cajero necesita volver a la pantalla del código igual), pero puede dejar el punto "fantasma"
+      // emparejado en el CRM hasta que un admin lo revise.
+      console.error("[setup] no se pudo desvincular en el CRM (se sigue con el olvido local):", err);
+    }
   }
   await prisma.posConfig.deleteMany({ where: { id: 1 } });
   clearSessionCache();
