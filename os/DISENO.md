@@ -3,6 +3,12 @@
 > **2026-09-26 — MySQL se reemplazó por SQLite** (Prisma 6.19). Donde más abajo diga MySQL, `pos_db`, contraseña de
 > base de datos o `bind-address`, léase: la base es el archivo `/var/lib/facturero/pos.db` (sin servidor, sin
 > contraseña, sin puerto). Ver `rules.md` (tabla de decisiones) y `CHANGELOG.md`.
+>
+> **2026-09-27 — todo lo de abajo ya se probó de punta a punta en VirtualBox** (varias instalaciones completas:
+> ISO → autoinstall → primer arranque → kiosco → emparejamiento), no solo "escrito". Ver `HANDOFF-pos-os.md`
+> (raíz del repo padre) para el estado real fase por fase, qué sigue sin probar (UEFI, hardware real,
+> `release.yml`) y dos bugs reales que salieron de esas pruebas (el socket local usaba la URL de desarrollo en
+> producción; F12 no abría el inspector por dos causas de ACL de Tauri, no del código de la app).
 
 Objetivo: que un cliente no técnico reciba un equipo (o una ISO), lo enciende, lo empareja con el
 código de 6 dígitos del CRM y vende. Sin escritorio, sin terminal, sin actualizar nada a mano.
@@ -54,32 +60,46 @@ todo se mueve junto y se puede volver atrás.
   migración que falla, versión que no arranca → rollback, etc.). Corren sin VM:
   `node --test os/updater/updater.test.mjs`.
 
-- **Fase 2 (pantalla servida por el backend, un solo origen)**: `POS_FRONTEND_DIST` en `index.ts` sirve el `frontend/dist` desde `:4000` (incluida la SPA en modo history: solo a peticiones de navegación con `Accept: text/html`), `/health` chequea la BD con `SELECT 1` y reporta la versión del archivo `VERSION` del dist, y el socket local se monta en el mismo server. `tauri.conf.json` abre la webview en `http://127.0.0.1:4000` (Tauri no se compiló: sin toolchain de Rust en la máquina de desarrollo). Pruebas en el CHANGELOG.
+- **Fase 2 (pantalla servida por el backend, un solo origen)**: `POS_FRONTEND_DIST` en `index.ts` sirve el `frontend/dist` desde `:4000` (incluida la SPA en modo history: solo a peticiones de navegación con `Accept: text/html`), `/health` chequea la BD con `SELECT 1` y reporta la versión del archivo `VERSION` del dist, y el socket local se monta en el mismo server. `tauri.conf.json`/`main.rs` abren la webview en `http://127.0.0.1:4000` (en el primer arranque, en `http://127.0.0.1:4080`, la pantalla de progreso). La ventana **sí se compila**, en Docker (`os/window/build-window.sh`, Ubuntu 24.04 + Rust 1.90 + webkit2gtk-4.1; no hay toolchain de Rust en la máquina de desarrollo, por eso el contenedor). Pruebas en el CHANGELOG.
+  - **Bug real encontrado el 2026-09-27** (no cosmético, afectaba a TODOS los POS instalados desde la primera
+    versión): `frontend/src/socket/localSocket.ts` comprobaba la variable de desarrollo
+    `VITE_LOCAL_SOCKET_URL` **antes** que `import.meta.env.PROD` con el operador `??`. Como Vite carga
+    `frontend/.env` también en `vite build` (no hay `.env.production` que lo tape), todo build de producción
+    hasta la 0.2.2 quedaba con la URL de desarrollo (`127.0.0.1:4001`) grabada en el bundle: el socket local
+    nunca conectaba, así que la desvinculación remota y el estado de sincronización nunca llegaban a la
+    pantalla sin recargar. Arreglado en 0.2.3: mismo orden que ya usaba correctamente `api/client.ts` (PROD
+    primero). Regla para el futuro: en cualquier `import.meta.env.ALGO ?? (PROD ? ... : ...)`, PROD va afuera.
 
-- **Fase 3 (`os/release/build-release.sh`)**: construye y firma la versión dentro de `node:22-bookworm-slim` (monta el repo solo lectura). Empaqueta: `backend/dist` compilado, `package*.json`, `node_modules` **solo de producción** con la CLI de prisma, `backend/prisma` (schema + migraciones), `frontend/dist`, y `VERSION`. Correr sin `--key` solo arma el stage; `--smoke` arranca el paquete contra el MySQL del compose local (por `host.docker.internal`) y comprueba `/health` + pantalla. Paquete ~39 MB gzip. Tres trampas resueltas en el script, documentadas en comentarios: (1) prisma pasó a `dependencies` para que `prisma migrate deploy` exista en `node_modules` de producción; (2) `node:22-*-slim` NO trae `openssl` y Prisma entonces detecta "openssl-1.1.x" y no encuentra el motor 3.0.x — el contenedor de build y el smoke instalan `openssl`; (3) Git Bash no puede pasar stdin a `docker.exe` (el script interno va montado como archivo) y `node` de Windows no entiende rutas POSIX (se pasan con `cygpath -w`).
+- **Fase 3 (`os/release/build-release.sh`)**: construye y firma la versión dentro de `node:22-bookworm-slim` (monta el repo solo lectura). Empaqueta: `backend/dist` compilado, `package*.json`, `node_modules` **solo de producción** con la CLI de prisma, `backend/prisma` (schema + migraciones), `frontend/dist`, y `VERSION`. Correr sin `--key` solo arma el stage; `--smoke` arranca el paquete con una base SQLite temporal dentro del propio contenedor (aplica las migraciones y comprueba `/health` + pantalla, sin depender de nada externo). Paquete final ~67 MB (se podó el runtime wasm de `@prisma/client` que no hace falta en Linux). Tres trampas resueltas en el script, documentadas en comentarios: (1) prisma pasó a `dependencies` para que `prisma migrate deploy` exista en `node_modules` de producción; (2) `node:22-*-slim` NO trae `openssl` y Prisma entonces detecta "openssl-1.1.x" y no encuentra el motor 3.0.x — el contenedor de build y el smoke instalan `openssl`; (3) Git Bash no puede pasar stdin a `docker.exe` (el script interno va montado como archivo) y `node` de Windows no entiende rutas POSIX (se pasan con `cygpath -w`).
 
 - **Fase 4 (`os/provision/install.sh` + plantillas)**: aprovisiona el equipo de forma idempotente:
-  usuario system `facturero`; Node 22.14.0 fijado en `/opt/facturero/runtime/` bajado de nodejs.org
-  con **verificación SHA256** contra `SHASUMS256.txt` (no el node de apt); MySQL solo en `127.0.0.1`
-  (drop-in `bind-address`), base `pos_db` y usuario `facturero` con contraseña aleatoria que solo
-  vive en `/etc/facturero/pos.env` (0600; systemd la inyecta vía `EnvironmentFile`); `pos.env` con
+  usuario system `facturero`; Node fijado en `/opt/facturero/runtime/` bajado de nodejs.org
+  con **verificación SHA256** contra `SHASUMS256.txt` (no el node de apt); base **SQLite**
+  (`/var/lib/facturero/pos.db`, sin servidor — ver la nota de MySQL→SQLite arriba); `pos.env` con
   `DATABASE_URL`, `JWT_SECRET`, `PORT=4000`, rutas de pantalla e imágenes (y `ADMIN_API_BASE_URL`
   solo si se pasó `--admin-api-base`); unidades `facturero-backend.service` (Restart=always) y
   `facturero-updater.service` + `.timer` (cada hora, `OnBootSec` 5 min + `RandomizedDelaySec` 10 min,
   `Persistent`); sudoers mínima (`NOPASSWD: systemctl restart/start facturero-backend`, ruta exacta
   detectada con `command -v` y la misma ruta plantillada en `updater.json` con `__SYSTEMCTL__`);
-  copia la clave pública a `/etc/facturero/release-public.pem`; ufw con todo lo entrante denegado; y
-  la **primera versión de la app se baja con el propio actualizador** lanzado por systemd (no `su`:
-  la unidad aporta el `EnvironmentFile` que necesita `prisma migrate deploy`). `migrateCmd` corre
+  copia la clave pública a `/etc/facturero/release-public.pem`; ufw con todo lo entrante denegado;
+  zona horaria `America/Guayaquil`; espera activa a que haya internet antes de instalar nada (avisa
+  cada 30 s en la pantalla en vez de saturarla de errores de `apt`); y la **primera versión de la app
+  se baja con el propio actualizador** lanzado por systemd (no `su`: la unidad aporta el
+  `EnvironmentFile` que necesita `prisma migrate deploy`). `migrateCmd` corre
   `prisma migrate deploy` desde `$RELEASE_DIR/backend`; `restartCmd` tolera el primer arranque
   (cuando la unidad aún no está levantada, `systemctl start` como rama del `||`).
 
-- **Fase 5 (`os/kiosk/`)**: autologin del usuario `facturero` en **tty1** vía drop-in de `getty@tty1.service.d` (`agetty --autologin`; el usuario queda con `/bin/bash` para poder iniciar X — ver instalador); `tty2..6`, `ctrl-alt-del.target` y los objetivos de sueño/suspensión enmascarados; `.bash_profile` → `exec startx` (solo si `XDG_VTNR=1`), `.xinitrc` → `openbox-session`, `rc.xml` **sin menú ni binds por defecto** (un solo escritorio); autostart hace `source` de `/etc/facturero/kiosk.env` y lanza `launch.sh`, que **espera `/health` y mantiene la ventana viva** (`/opt/facturero/app/facturero-pos-app`, con reintento a los 2 s si muere), apaga salvapantallas/suspensión (`xset -dpms`) y oculta el cursor si `KIOSK_HIDE_CURSOR=1` (`xsetroot -cursor empty.xbm`). Acceso de servicio técnico: **SSH con clave SOLO desde `--allow-ssh-from CIDR`** en el instalador (ufw: `allow from <cidr> to any port 22`); **nada de contraseñas fijas**.
+- **Fase 5 (`os/kiosk/`)**: autologin del usuario `facturero` en **tty1** vía drop-in de `getty@tty1.service.d` (`agetty --autologin`; el usuario queda con `/bin/bash` para poder iniciar X — ver instalador); `tty2..6`, `ctrl-alt-del.target` y los objetivos de sueño/suspensión enmascarados; `.bash_profile` → `exec startx` (solo si `XDG_VTNR=1`), `.xinitrc` → `openbox-session`, `rc.xml` **sin menú ni binds por defecto** (un solo escritorio); autostart hace `source` de `/etc/facturero/kiosk.env` y lanza `launch.sh`, que **espera `/health` y mantiene la ventana viva** (`/opt/facturero/app/facturero-pos-app`, con reintento a los 2 s si muere), apaga salvapantallas/suspensión (`xset -dpms`) y oculta el cursor si `KIOSK_HIDE_CURSOR=1` (`xsetroot -cursor empty.xbm`). Acceso de servicio técnico: **SSH con clave SOLO desde `--allow-ssh-from CIDR`** en el instalador (ufw: `allow from <cidr> to any port 22`); **nada de contraseñas fijas**. La pantalla del POS lleva además una **barra de estado inferior** (versión, cable/Wi-Fi/sin red, hora — `frontend/src/components/StatusBar.vue` + `backend/src/system/network.ts`) y, con **F12**, abre el inspector de la webview (pestaña Red) sin SSH ni navegador aparte.
 
-- **Fase 6 (`os/iso/`)**: `autoinstall.yaml` (subiquity v1, Server 24.04): disco completo LVM, locale es_ES, teclado es, usuario técnico `taller` sin contraseña de login (`allow-pw: false`, clave SSH del parámetro), y `late-commands` que **solo copian** `pos-os/` y los parámetros al destino y habilitan `facturero-firstboot.service` (no se corre `install.sh` en chroot: `systemctl`/MySQL no funcionan ahí). `firstboot.sh` (unidad `Type=oneshot`, `After=network-online.target`): lee `install-params.env` → `install.sh --admin-api-base … --allow-ssh-from …` → `setup-kiosk.sh` → se desactiva y `systemctl reboot` al kiosco. `build-iso.sh` (para Ubuntu, **no Windows**): extrae la ISO con `xorriso -osirrox`, copia `os/` como `pos-os`, sustituye placeholders y añade la entrada grub `autoinstall ds=nocloud\;/s=/cdrom/` (el grub EFI carga el MISMO `boot/grub/grub.cfg`, así que una edición vale para BIOS y UEFI); reconstruye con `xorriso -as mkisofs`. Detalles en `os/iso/REMOSTRADO.md`.
+- **Fase 6 (`os/iso/`)**: `autoinstall.yaml` (subiquity v1, Server 24.04): disco completo LVM, locale es_ES, teclado es, usuario técnico `taller` sin contraseña de login (`allow-pw: false`, clave SSH del parámetro), y `late-commands` que **solo copian** `pos-os/` y los parámetros al destino y habilitan `facturero-firstboot.service` (no se corre `install.sh` en chroot: `systemctl` no funciona ahí). `firstboot.sh` (unidad `Type=oneshot`, `After=network-online.target`): lee `install-params.env` → `install.sh --admin-api-base … --allow-ssh-from …` → `setup-kiosk.sh` → se desactiva y `systemctl reboot` al kiosco. Pantalla de instalación en modo texto, estilo Hermes: pasos a la izquierda y comandos en vivo a la derecha (`os/iso/install-tui.py`, recibe los eventos de subiquity por webhook), y pantalla de marca sin texto de consola durante todo el proceso (`os/iso/brand.sh`, consola virtual 9). El primer arranque tiene su propia pantalla gráfica, mismo estilo (`os/installer-ui/`, servida en `:4080` por la misma ventana Tauri). `build-iso.sh`/`build-iso-docker.sh` (el segundo corre en Docker, sirve también desde Windows): reconstruyen la ISO con `xorriso`, copian `os/` como `pos-os`, sustituyen placeholders y dejan un solo menú de GRUB ("Instalar Facturero POS", sin texto de consola visible). Detalles en `os/iso/REMOSTRADO.md`.
 
-**No probado todavía:** nada de lo que necesita Linux real (systemd, Openbox, autoinstall, MySQL del
-sistema). Las pruebas del actualizador usan carpetas temporales y comandos de mentira.
+**Probado en VirtualBox (2026-09-27), de punta a punta, varias veces:** arranque de la ISO → autoinstall →
+primer arranque completo → reinicio al kiosco → emparejamiento con un código real del CRM. Ver
+`HANDOFF-pos-os.md` para el detalle de qué falló en el camino y cómo se arregló.
+
+**Sin probar todavía:** UEFI (todo lo de arriba fue en BIOS), hardware real (pantalla táctil, impresora,
+Wi-Fi real — el detector de red distingue cable/Wi-Fi pero nunca se probó con una tarjeta Wi-Fi real), y
+`.github/workflows/release.yml` (nunca se ejecutó; todas las releases hasta la 0.2.4 se armaron a mano).
 
 ## Reglas que salen de este diseño
 
@@ -89,9 +109,16 @@ sistema). Las pruebas del actualizador usan carpetas temporales y comandos de me
 2. **La clave privada de firma nunca va al repo ni al equipo del cliente.** Solo la pública viaja en
    la imagen. Perder la privada = no poder actualizar los equipos ya instalados (guardar copia).
 3. **Prisma necesita el motor de Linux.** Hecho en la fase 2: `binaryTargets = ["native", "debian-openssl-3.0.x"]` en el `generator` de `schema.prisma`, con el motor de Debian/OpenSSL3 generado junto al de Windows. El paquete se puede seguir construyendo en Windows; el motor de Ubuntu 24.04 va incluido.
-4. **Un solo origen para la pantalla:** hecho en la fase 2: el backend sirve la pantalla compilada (`serveStatic` en :4000, activado con `POS_FRONTEND_DIST`) y Tauri solo abre `http://127.0.0.1:4000`. La API del frontend y el socket local usan URLs relativas (mismo origen) en producción; en desarrollo nada cambió (Vite 1420 + socket 4001). El socket local (socket.io `pos.unlink`, `sync.status`) se monta en el mismo server :4000 cuando el backend sirve la pantalla. 401 de `/sync/status` sin sesión: esperado (la pantalla lo consulta al cargar; ese ciclo se vuelve a disparar tras login).
+4. **Un solo origen para la pantalla:** hecho en la fase 2: el backend sirve la pantalla compilada (`serveStatic` en :4000, activado con `POS_FRONTEND_DIST`) y Tauri solo abre `http://127.0.0.1:4000`. La API del frontend y el socket local usan URLs relativas (mismo origen) en producción; en desarrollo nada cambió (Vite 1420 + socket 4001) — **siempre comprobando `import.meta.env.PROD` primero**, nunca detrás de un `??` con la variable de desarrollo (ver el bug real de la fase 2 arriba). El socket local (socket.io `pos.unlink`, `sync.status`) se monta en el mismo server :4000 cuando el backend sirve la pantalla. 401 de `/sync/status` sin sesión: esperado (la pantalla lo consulta al cargar; ese ciclo se vuelve a disparar tras login).
 5. El equipo solo saca tráfico hacia el CRM (gateway), el servidor de actualizaciones y NTP; nada
    entra (cortafuegos `ufw` con todo denegado hacia dentro).
+6. **Cualquier comando propio de Tauri (`#[tauri::command]`) necesita DOS cosas, no solo el código**:
+   declararlo en `src-tauri/build.rs` (`AppManifest::new().commands(&["..."])`, para que Tauri genere su
+   permiso `allow-<comando>`) y, como la ventana carga una URL externa (`http://127.0.0.1:4000`/`:4080`,
+   no el protocolo interno de Tauri), agregar ese origen a `"remote": { "urls": [...] }` en
+   `capabilities/default.json`. Sin cualquiera de las dos, el comando compila bien pero el runtime lo
+   rechaza con "not allowed by ACL". Encontrado con F12 (abre el inspector); documentado para el
+   próximo comando que se agregue.
 
 ## Fases
 
@@ -100,12 +127,12 @@ sistema). Las pruebas del actualizador usan carpetas temporales y comandos de me
 | 1 | Actualizador + firma de paquetes | `os/updater`, `os/release`, pruebas | ✅ hecho |
 | 2 | Pantalla servida por el backend + `/health` + `binaryTargets` de Prisma | cambios en `pos/backend` y `pos/frontend` | ✅ hecho y probado en modo producción de `:4000` |
 | 3 | Script de construcción de la versión (Linux/Docker) | `os/release/build-release.sh`: compila, instala deps de producción, arma la carpeta que consume `sign-release` | ✅ hecho y probado (build + firma + smoke) |
-| 3b | CI de publicación en GitHub Releases | `.github/workflows/release.yml`: construye al crear `vX.Y.Z`, firma con `RELEASE_SIGNING_KEY` y sube `latest.json` + `.tar.gz` con `gh release create` | ✅ escrito y validado (YAML); **sin ejecutar** |
-| 4 | Aprovisionamiento de Ubuntu (`install.sh`): Node fijado, usuario `facturero`, unidades systemd (backend + timer del actualizador), cortafuegos | `os/provision/` | ✅ escrito (`install.sh` + unidades + `updater.json`); **sin probar — VirtualBox** |
-| 5 | Modo kiosco: autologin, Openbox arrancando la ventana, sin TTY ni atajos, reinicio automático si la ventana se cierra | `os/kiosk/` | ✅ escrito (`launch.sh`, `setup-kiosk.sh`, `rc.xml`, `empty.xbm`); **sin probar — VM** |
-| 6 | Instalación desatendida: `autoinstall.yaml` (cloud-init) y remasterizado de la ISO | `os/iso/` | ✅ escrito (`autoinstall.yaml`, `firstboot.sh` + unidad, `build-iso.sh`, `REMOSTRADO.md`); **sin probar — necesita ISO + autorización del dueño** |
-| 7 | Publicación en **GitHub Releases** de `facturero/pos` (repo público) + CI que firma y publica al crear una etiqueta `vX.Y.Z` | `.github/workflows/release.yml` | decidido; pendiente de escribir (ver HANDOFF-pos-os.md) |
-| 8 | Icono, nombre del equipo y marca; prueba en hardware real | — | pendiente |
+| 3b | CI de publicación en GitHub Releases | `.github/workflows/release.yml`: construye al crear `vX.Y.Z`, firma con `RELEASE_SIGNING_KEY` y sube `latest.json` + `.tar.gz` con `gh release create` | ✅ escrito y validado (YAML); **sin ejecutar** — hasta la 0.2.4 cada release se armó a mano |
+| 4 | Aprovisionamiento de Ubuntu (`install.sh`): Node fijado, usuario `facturero`, unidades systemd (backend + timer del actualizador), cortafuegos, SQLite | `os/provision/` | ✅ hecho y **probado en VirtualBox** (varias instalaciones completas) |
+| 5 | Modo kiosco: autologin, Openbox arrancando la ventana, sin TTY ni atajos, reinicio automático si la ventana se cierra, barra de estado, F12 | `os/kiosk/` + `frontend/src/components/StatusBar.vue` | ✅ hecho y **probado en VirtualBox** |
+| 6 | Instalación desatendida: `autoinstall.yaml`, primer arranque y remasterizado de la ISO, ambos con pantalla estilo Hermes | `os/iso/`, `os/installer-ui/` | ✅ hecho y **probado en VirtualBox** (BIOS; UEFI sin probar) |
+| 7 | Publicación en **GitHub Releases** de `facturero/pos` (repo público) | releases `v0.2.0` a `v0.2.4` publicadas | ✅ hecho; el CI de publicación automática (fase 3b) sigue sin ejecutarse |
+| 8 | Icono, nombre del equipo y marca; prueba en hardware real; Wi-Fi (conectar desde el POS, no solo detectar) | — | pendiente |
 
 ## Publicar una versión (pasos del dueño)
 
@@ -131,6 +158,14 @@ El repo es público y la clave privada de firma **nunca va al repo** (regla 2).
 ## Decisiones abiertas
 
 - ~~Dónde se publican las actualizaciones~~: **GitHub Releases** de `facturero/pos`. Manifiesto: `https://github.com/facturero/pos/releases/latest/download/latest.json`. El repo es público, así que los equipos descargan sin token; el paquete lleva el código compilado, no el fuente privado de nadie más. La clave privada de firma vive solo como secreto de GitHub del dueño.
-- **Hardware objetivo:** arquitectura (x86_64 casi seguro), pantalla táctil o no, impresora de tickets.
-- **Qué pasa sin internet al instalar:** la ISO puede llevar todo embebido (más pesada) o bajar la capa de
-  aplicación en el primer arranque (necesita red la primera vez).
+- ~~Qué pasa sin internet al instalar~~: la app se baja en el primer arranque (necesita red); si no hay,
+  el primer arranque **espera activamente** y avisa en pantalla cada 30 s, en vez de fallar.
+- **Hardware objetivo:** arquitectura (x86_64 casi seguro), pantalla táctil o no, impresora de tickets —
+  sigue sin decidirse, y nada de esto se probó en hardware real todavía.
+- **Wi-Fi:** hoy el equipo asume cable con DHCP. La barra de estado del POS ya distingue cable/Wi-Fi, pero
+  no hay forma de CONFIGURAR una red Wi-Fi desde el equipo (ni en la instalación ni después). Pedido por
+  el dueño, no implementado: Ubuntu Server no trae herramientas de escaneo/conexión por defecto, así que
+  es más que agregar un botón — hay que meterlas en la ISO.
+- **Apagar/reiniciar desde la barra de estado del POS:** pedido por el dueño, no implementado todavía
+  (más simple que el Wi-Fi: una regla `sudoers` acotada a `systemctl reboot`/`poweroff` y un botón con
+  confirmación).

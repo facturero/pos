@@ -49,7 +49,7 @@ El POS es una **caja registradora física/kiosco**, no un panel de administraci�
 | El rol del usuario de servicio del POS es "Administrador" (todos los permisos) | Decisión temporal explícita del dueño del proyecto — falta definir un catálogo de permisos propio para terminales POS | `auth-service/src/application/use-cases/provision-service-account.ts` |
 | `push.ts` (subir ventas al CRM) siempre va a fallar por ahora | `billing-service` (donde vivirían las facturas) todavía no existe en el CRM. No es un bug — las ventas se acumulan sin pérdida en `synced: false` | `pos/backend/src/sync/push.ts` |
 | Emparejamiento vía TOTP (código de 6 dígitos rotativo), no usuario/contraseña fijo | Más seguro, más fácil para un no-técnico que instale el POS, y define sin ambigüedad a qué organización pertenece cada instalación | `organization-service` + `pos/backend/src/routes/setup.routes.ts` |
-| Emparejamiento de un solo uso | Un punto de emisión emparejado no puede volver a emparejarse sin que un admin lo desvincule explícitamente desde el CRM | `organization-service/src/domain/entities.ts` (`EmissionPoint.markPaired`/`unlinkAndRegenerate`) |
+| Emparejamiento de un solo uso, pero con autoservicio (2026-09-27) | Un punto de emisión emparejado no puede volver a emparejarse hasta que se desvincule. Antes eso lo hacía SOLO un admin desde el CRM; ahora el propio POS también puede desvincular SU MISMO punto ("Volver a ingresarlo" en el login, por si se emparejó con el código equivocado), con su propio token — nunca el de otro equipo | `organization-service/src/domain/entities.ts` (`EmissionPoint.markPaired`/`unlinkAndRegenerate`); `pos/backend/src/routes/setup.routes.ts` (`/setup/forget`) + `pos/backend/src/sync/admin-client.ts` (`unlinkRemoteEmissionPoint`) |
 | IDs sincronizados desde el CRM son UUID (string), no autoincrement | Así los maneja `product-service`/`organization-service` | `prisma/schema.prisma` → campos `remoteId` |
 | SQLite local (un archivo) para el backend del POS — **reemplazó a MySQL el 2026-09-26** | Un POS es un solo equipo con un solo proceso: no necesita servidor de base de datos. Ahorra RAM y disco, elimina la contraseña de BD, el arranque ordenado y los 10 min de inicialización de MySQL; Prisma 6 (>= 6.2) migra SQLite igual (`migrate deploy`). La seguridad ante acceso físico la da cifrar el disco, no el motor | `prisma/schema.prisma`, `src/db.ts` (WAL, busy_timeout), `os/provision/install.sh` |
 
@@ -70,7 +70,9 @@ El POS es una **caja registradora física/kiosco**, no un panel de administraci�
    crea/reutiliza un usuario de servicio y devuelve tokens.
 6. El POS guarda el `refreshToken` en `pos_config` (fila única) y desde
    entonces solo hace `/auth/refresh` — nunca vuelve a pedir el código a menos
-   que un admin lo desvincule.
+   que un admin lo desvincule desde el CRM, o que el propio cajero use "Volver
+   a ingresarlo" en el login (autoservicio: el POS desvincula SU MISMO punto,
+   ver la tabla de la sección 3).
 
 **Nunca** vuelvas a un modelo de `ADMIN_API_EMAIL`/`ADMIN_API_PASSWORD` fijo en
 `.env` — ya se descartó explícitamente por este flujo.
@@ -91,6 +93,26 @@ El POS es una **caja registradora física/kiosco**, no un panel de administraci�
 - Comentarios en español, igual que el resto del código ya escrito.
 - Nunca reproducir la estructura de "un microservicio nuevo por feature" sin
   preguntar — ya hay bastantes servicios corriendo.
+- **`import.meta.env.PROD` va SIEMPRE afuera**, nunca detrás de un `??` con una
+  variable de desarrollo (`frontend/.env` no distingue dev/build: Vite lo carga
+  también en `vite build`). Patrón correcto:
+  `PROD ? "valor de producción" : (VITE_ALGO ?? "valor de desarrollo")`. El
+  orden al revés hizo que **todos** los POS instalados hasta la 0.2.2 tuvieran
+  el socket local roto en producción sin que nadie lo notara — ver el
+  CHANGELOG del 2026-09-27.
+
+## 5b. Cosas propias de Tauri que ya costaron tiempo (2026-09-27)
+
+- Cualquier comando propio (`#[tauri::command]` en `frontend/src-tauri/src/main.rs`) necesita DOS cosas
+  además del código, o el runtime lo rechaza con "not allowed by ACL" aunque compile bien: declararlo en
+  `build.rs` (`tauri_build::Attributes::new().app_manifest(AppManifest::new().commands(&["..."]))`, para
+  que Tauri genere su permiso `allow-<comando>`), y agregar el origen de la ventana
+  (`http://127.0.0.1:4000`, `:4080` para la pantalla del primer arranque) a `"remote": {"urls": [...]}` en
+  `frontend/src-tauri/capabilities/default.json` (Tauri trata una URL externa como remota, no como
+  contenido local de la app).
+- El binario de la ventana **no lo actualiza `os/updater`** (ese solo mueve backend+frontend). Un cambio
+  en `frontend/src-tauri/` necesita una ISO nueva para llegar a instalaciones nuevas; a un equipo ya
+  instalado hay que copiarle el binario a mano.
 
 ## 6. Seguridad — límites duros
 

@@ -12,13 +12,81 @@ Antes de tocar código, lee también `rules.md` (reglas fijas) y `todo.md`
 
 ## Estado actual en una frase
 
-El POS está **emparejado y validado de punta a punta contra un CRM en Docker**
-(2026-09-25): catálogo ↓, venta local, push → factura `issued` numerada en el
-CRM, idempotencia, offline sin pérdida, y desvinculación remota por socket.io.
-Del OS (capas 2–6 del HANDOFF) están hechas la 2 (pantalla servida por el backend,
-un solo origen) y la 3 (empaquetado + firma en Docker con `build-release.sh`);
-falta la CI de publicación (3b) y las fases 4–6 (provisión, kiosco, ISO).
-Pendientes no-código: decisión de IVA en la caja y stock real.
+El sistema operativo del POS está **hecho y probado de punta a punta en VirtualBox**
+(2026-09-27): ISO autoinstalable de Ubuntu 24.04.5 → primer arranque (pantalla
+estilo Hermes) → kiosco → emparejamiento con un código real del CRM, y la app se
+actualiza sola desde GitHub Releases (`v0.2.0` a `v0.2.4` publicadas). Quedan sin
+probar: UEFI, hardware real, y el CI de publicación automática (`release.yml`,
+cada release hasta ahora se armó a mano). Ver `HANDOFF-pos-os.md` para el detalle
+completo, incluidos dos bugs reales (no cosméticos) que salieron de estas pruebas.
+Pendientes no-código: decisión de IVA en la caja y stock real (siguen abiertas de
+sesiones anteriores), Wi-Fi y apagar/reiniciar desde la barra de estado del POS.
+
+---
+
+## 2026-09-27 — Sesión: ISO probada en VirtualBox, dos bugs reales, autoservicio de desvinculación
+
+**Qué se hizo:** se retomó el instalador/OS (parado desde el 2026-08, ver "Antes de esto" más abajo) y
+se probó de punta a punta en VirtualBox, varias veces, hasta que una instalación completa (ISO →
+autoinstall → primer arranque → kiosco → emparejamiento) funcionó sin intervención manual:
+- Pantalla de instalación de Ubuntu en modo texto y primer arranque en modo gráfico, ambos estilo
+  Hermes (pasos a la izquierda, comandos en vivo a la derecha) — `os/iso/install-tui.py`,
+  `os/installer-ui/`. Sin texto de consola visible en ningún momento (`os/iso/brand.sh`).
+- El primer arranque espera activamente a que haya internet (antes llenaba la pantalla de errores de
+  `apt` si no había red) y deja el equipo en zona horaria `America/Guayaquil`.
+- **Barra de estado inferior** en toda la pantalla del POS: versión, cable/Wi-Fi/sin red (el backend lo
+  lee de `/proc/net/route` + `/sys/class/net/*/wireless`, solo Linux), hora.
+- **F12 abre el inspector de la webview** (pestaña Red) directamente en el POS.
+- Ventana de Tauri (`os/window/`) reconstruida varias veces en Docker sin problema (el toolchain de Rust
+  vive solo en el contenedor).
+- Releases `v0.2.0` a `v0.2.4` publicadas en GitHub, cada una verificada (hash + firma) contra lo que
+  sirve `releases/latest/download/latest.json` antes de darla por buena.
+
+**Por qué así (dos bugs reales, no cosméticos, que costó encontrar):**
+1. **El socket local de la pantalla nunca conectaba en producción, en NINGÚN POS instalado desde la
+   primera versión.** `frontend/src/socket/localSocket.ts` comprobaba `import.meta.env.VITE_LOCAL_SOCKET_URL`
+   (variable de *desarrollo*, en `frontend/.env`) **antes** que `import.meta.env.PROD` con el operador
+   `??`. Como Vite carga `.env` también en `vite build` (no hay `.env.production` que lo tape), todo
+   build de producción hasta la 0.2.2 quedaba con la URL de desarrollo (`127.0.0.1:4001`) grabada en el
+   bundle. Efecto real: la desvinculación remota y el estado de sincronización nunca llegaban a la
+   pantalla sin recargar. Se encontró porque F12 (ver abajo) finalmente dejó ver la consola. Arreglado en
+   la 0.2.3: mismo orden que ya usaba bien `api/client.ts` (PROD primero, la variable de desarrollo solo
+   dentro de la rama que NO es producción).
+2. **F12 no abría nada, por dos causas de Tauri 2, no del código de la app:** faltaba declarar el
+   comando `open_devtools` en `src-tauri/build.rs` (`AppManifest.commands`, para que Tauri generara su
+   permiso), y faltaba agregar `http://127.0.0.1:4000`/`:4080` a `"remote"` en `capabilities/default.json`
+   (Tauri trata una URL externa como remota, no como contenido local de la app, y sin eso el ACL bloquea
+   cualquier comando aunque el permiso exista). Diagnosticarlo se complicó porque el síntoma inicial
+   ("el teclado de VirtualBox no llega") era real pero era OTRO problema: la inyección de bajo nivel
+   `keyboardputscancode` no dispara `keydown` de verdad; con teclado físico dentro de la ventana de
+   VirtualBox sí llega.
+3. **"Volver a ingresarlo" (login del POS) solo olvidaba el emparejamiento local**, a propósito según el
+   comentario original: el punto de emisión quedaba emparejado en el CRM para siempre hasta que un admin
+   lo desvinculara a mano. Decisión del dueño: que sea autoservicio. El POS ahora llama a la MISMA ruta
+   que usa el admin desde `EstablishmentsView`, con su propio token (ya tiene los permisos del rol
+   Administrador, ver `issueDeviceSession` en `auth-service`) y el `establishmentId`/`emissionPointId` de
+   su propio `PosConfig` — nunca puede tocar el punto de otro equipo. Si el CRM no responde, sigue con el
+   olvido local para no dejar al cajero atascado.
+
+**Qué queda como consecuencia:**
+- Cualquier `import.meta.env.ALGO ?? (PROD ? ... : ...)` nuevo debe comprobar PROD primero — es fácil
+  repetir el bug 1 sin darse cuenta, porque compila y el string queda ahí, solo se nota si algo intenta
+  usar esa conexión.
+- Cualquier comando nuevo de Tauri (`#[tauri::command]`) necesita las DOS cosas del bug 2: declararse en
+  `build.rs` Y el origen en `capabilities/*.json` bajo `"remote"`. Si un comando nuevo falla con "not
+  allowed by ACL" aunque compile bien, es casi seguro esto.
+- El binario de la ventana (Tauri) **no lo toca el actualizador** — solo la app (backend+frontend). Si se
+  cambia algo de `frontend/src-tauri/`, hace falta una ISO nueva para que llegue a instalaciones nuevas;
+  a un equipo YA instalado hay que copiarle el binario a mano (o esperar a que alguien lo reinstale).
+- El flujo completo del autoservicio de desvinculación (punto 3) se verificó por lectura de código y por
+  el smoke test del release, pero no de punta a punta con un emparejamiento real: hace falta iniciar
+  sesión en el CRM para generar un código, y quien probó esto (Claude) no escribe contraseñas en
+  formularios de login. Falta que el dueño lo confirme.
+- `HANDOFF-pos-os.md` y `os/DISENO.md` quedaron reescritos con el estado real (ya no dicen "sin probar"
+  donde ya se probó). `rules.md` y `todo.md` también se revisaron esta sesión.
+
+**Siguiente paso:** UEFI, hardware real, ejecutar `release.yml` al menos una vez, y las dos decisiones
+pendientes del dueño (Wi-Fi configurable, apagar/reiniciar desde la barra de estado).
 
 ---
 

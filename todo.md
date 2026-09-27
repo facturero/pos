@@ -40,24 +40,44 @@ Marca con [x] cuando esté hecho Y validado (no solo escrito).
 - [x] Probar "Desvincular y regenerar" desde el CRM, y que el POS ya
       desvinculado no pueda seguir sincronizando (desvincula solo vía socket.io;
       con `pos_config` vacío no sube ventas; re-empareja con código nuevo)
+- [ ] **Autoservicio de desvinculación** (2026-09-27): "Volver a ingresarlo" en
+      el login ahora también desvincula el punto en el CRM (no solo local),
+      llamando a la misma ruta que usa el admin. Verificado por lectura de
+      código y por el smoke test del release; **falta la prueba de punta a
+      punta con un emparejamiento real** (emparejar → volver a ingresar → ver
+      que el punto quedó libre en el CRM) — el dueño puede hacerla, tiene
+      acceso al CRM.
 
 ## 🟡 Falta programar — trabajo real, no solo config
 
-- [ ] **El instalador/OS** (el objetivo original de toda esta conversación,
-      antes de desviarnos a construir el POS en sí):
-  - [ ] ISO de Ubuntu con `autoinstall.yaml`
-  - [ ] Modo kiosco (Openbox, autologin, sin escritorio)
-  - [ ] Lockdown (deshabilitar TTYs, atajos de teclado, firewall)
-  - [ ] Script/servicio systemd que instale backend (SQLite) + frontend +
-        launcher con auto-updater al primer arranque
-  - [ ] Separación en dos partes: imagen de OS (cambia poco) + capa de app
-        que se auto-actualiza sola (tipo Discord), ya decidido en la
-        conversación inicial
-- [ ] **Auto-updater de Tauri**: generar el par de claves
-      (`npx tauri signer generate`), reemplazar el `pubkey` placeholder en
-      `tauri.conf.json`, y armar el servidor de `latest.json`
-- [ ] **Iconos de la app** (`src-tauri/icons/`) — vacío, generar con
-      `npx tauri icon <logo.png>`
+- [x] **El instalador/OS** — hecho y probado en VirtualBox el 2026-09-27 (ver
+      `HANDOFF-pos-os.md` y `os/DISENO.md`, ambos reescritos esa sesión):
+  - [x] ISO de Ubuntu con `autoinstall.yaml`, pantalla estilo Hermes durante la
+        instalación y el primer arranque
+  - [x] Modo kiosco (Openbox, autologin, sin escritorio), barra de estado y
+        F12 (inspector de la webview) en la pantalla del POS
+  - [x] Lockdown (TTYs deshabilitados, ufw todo entrante denegado; atajos de
+        teclado: no hace falta, Openbox no trae menú por defecto)
+  - [x] `os/provision/install.sh` + unidades systemd: backend (SQLite) +
+        frontend + `os/updater` corriendo cada hora
+  - [x] Dos capas — imagen de OS (casi no cambia) + capa de app versionada
+        que se auto-actualiza sola —, decidido y hecho: **actualizador
+        propio** (`os/updater`), no el de Tauri (ver ítem de abajo)
+  - [ ] **Sin probar todavía**: UEFI (todo fue BIOS), hardware real (pantalla
+        táctil, impresora, Wi-Fi real), y `.github/workflows/release.yml`
+        (nunca se ejecutó — cada release hasta la 0.2.4 se armó a mano)
+  - [ ] **Pedido por el dueño, no implementado**: conectar a una red Wi-Fi
+        desde el propio equipo (hoy solo se DETECTA cable/Wi-Fi en la barra de
+        estado, no se puede configurar); apagar/reiniciar desde la barra de
+        estado del POS
+- [x] ~~**Auto-updater de Tauri**~~ — decisión tomada en contra: se construyó un
+      **actualizador propio** (`os/updater/`, firmado con Ed25519, con
+      rollback) en vez del plugin updater de Tauri, porque este último solo
+      reemplaza el binario de la ventana y la app real es un backend Node con
+      migraciones que Tauri no toca. `main.rs` **no** lleva el plugin.
+- [ ] **Logo real** (`src-tauri/icons/`) — sigue con un placeholder generado
+      automáticamente en el build (`os/window/build-window.sh`/Dockerfile,
+      `make-icons.py`) para poder compilar sin bloquear todo lo demás.
 - [x] **billing-service** existe y está desplegado desde el 2026-09-04.
       `POST /invoices/from-pos` ya es un endpoint real (2026-09-15): convierte
       la venta en factura EMITIDA, es idempotente por (terminalId, posSaleId) y
@@ -105,7 +125,9 @@ Marca con [x] cuando esté hecho Y validado (no solo escrito).
 
 - ¿La caja puede vender sin stock suficiente? Hoy vende siempre; inventario ya
   avisa de existencias en negativo, pero nadie bloquea la venta.
-- ¿El instalador/OS sigue siendo prioridad, o el foco ahora es terminar de
-  validar/probar el POS + CRM tal como están?
 - ¿Un solo POS por punto de emisión, o eventualmente varios dispositivos
   compartiendo el mismo punto de emisión? (hoy el diseño asume 1:1)
+- ~~¿El instalador/OS sigue siendo prioridad?~~ — resuelto: se retomó y se
+  probó de punta a punta en VirtualBox (2026-09-27). Las preguntas que quedan
+  de esa parte (Wi-Fi, apagar/reiniciar desde el POS, prioridad de probar en
+  hardware real vs. seguir con el POS/CRM) están en la sección de arriba.
