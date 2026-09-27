@@ -7,13 +7,25 @@
 // La ventana se crea aqui (y no en tauri.conf.json) para poder elegir la direccion al arrancar:
 //   POS_WINDOW_URL  (por defecto http://127.0.0.1:4000, el POS). Durante el primer arranque el instalador la
 //   apunta a su pantalla de progreso (os/installer-ui, http://127.0.0.1:4080).
+//
+// `open_devtools`: comando invocable desde el frontend (App.vue escucha F12) para abrir el inspector de la
+// webview y poder leer la pestaña Red directamente en la pantalla del POS, sin SSH ni un navegador aparte.
+// Requiere la feature "devtools" de tauri (ver Cargo.toml).
 
-use tauri::{WebviewUrl, WebviewWindowBuilder};
+use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 const DEFAULT_URL: &str = "http://127.0.0.1:4000";
 
+#[tauri::command]
+fn open_devtools(app: tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        window.open_devtools();
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![open_devtools])
         .setup(|app| {
             let raw = std::env::var("POS_WINDOW_URL").unwrap_or_else(|_| DEFAULT_URL.to_string());
             let url: tauri::Url = raw

@@ -8,7 +8,12 @@ edition = "2021"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# "devtools": permite abrir el inspector de la webview (clic derecho -> Inspeccionar, con teclado F12 en
+# WebView2 o Ctrl+Shift+I en WebKitGTK) para poder leer la pestaña Red/Network directamente en la pantalla
+# del POS, sin depender de SSH ni de un navegador aparte. Sin esta feature, Tauri deshabilita el inspector en
+# builds release. No hay riesgo extra: el inspector solo lo abre quien tiene acceso físico al equipo, que ya
+# podría leer la red con otras herramientas del sistema.
+tauri = { version = "2", features = ["devtools"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

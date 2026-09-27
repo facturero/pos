@@ -13,15 +13,31 @@ const sync = useSyncStore();
 const setup = useSetupStore();
 const router = useRouter();
 
+// F12 abre el inspector de la webview (pestaña Red incluida): así se puede diagnosticar el equipo desde su
+// propia pantalla, sin SSH ni un navegador aparte. El comando vive en el lado nativo (main.rs, feature
+// "devtools" de Tauri); fuera de Tauri (navegador de desarrollo) `invoke` no existe y se ignora en silencio.
+async function handleGlobalKeydown(e: KeyboardEvent): Promise<void> {
+  if (e.key !== "F12") return;
+  e.preventDefault();
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("open_devtools");
+  } catch {
+    // no estamos dentro de la webview de Tauri (p. ej. `npm run dev` en un navegador): nada que abrir
+  }
+}
+
 onMounted(() => {
   auth.restoreSession();
   setup.startUnlinkListener();
   sync.startSyncListener();
+  window.addEventListener("keydown", handleGlobalKeydown);
 });
 
 onUnmounted(() => {
   setup.stopUnlinkListener();
   sync.stopSyncListener();
+  window.removeEventListener("keydown", handleGlobalKeydown);
 });
 
 // Desvinculación remota: el admin presionó "Desvincular y regenerar" en el
