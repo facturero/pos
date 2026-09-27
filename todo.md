@@ -63,13 +63,18 @@ Marca con [x] cuando esté hecho Y validado (no solo escrito).
   - [x] Dos capas — imagen de OS (casi no cambia) + capa de app versionada
         que se auto-actualiza sola —, decidido y hecho: **actualizador
         propio** (`os/updater`), no el de Tauri (ver ítem de abajo)
+  - [x] **Apagar/reiniciar y conectar Wi-Fi desde la barra de estado del POS**
+        (2026-09-27): `backend/src/system/{power,wifi}.ts` +
+        `frontend/src/components/WifiPanel.vue`. Wi-Fi usa NetworkManager
+        (`nmcli`), que el instalador ahora instala y deja gestionando la red
+        (con una regla de polkit para que funcione sin sudo). Verificado con
+        `fetch` simulado en el navegador y 8 pruebas del parser de `nmcli`;
+        **falta probarlo con una tarjeta Wi-Fi real** (VirtualBox no simula
+        ninguna) — es el ítem más importante de la lista de abajo.
   - [ ] **Sin probar todavía**: UEFI (todo fue BIOS), hardware real (pantalla
-        táctil, impresora, Wi-Fi real), y `.github/workflows/release.yml`
-        (nunca se ejecutó — cada release hasta la 0.2.4 se armó a mano)
-  - [ ] **Pedido por el dueño, no implementado**: conectar a una red Wi-Fi
-        desde el propio equipo (hoy solo se DETECTA cable/Wi-Fi en la barra de
-        estado, no se puede configurar); apagar/reiniciar desde la barra de
-        estado del POS
+        táctil, impresora, Wi-Fi real — ver arriba), y
+        `.github/workflows/release.yml` (nunca se ejecutó — cada release
+        hasta la 0.2.4 se armó a mano)
 - [x] ~~**Auto-updater de Tauri**~~ — decisión tomada en contra: se construyó un
       **actualizador propio** (`os/updater/`, firmado con Ed25519, con
       rollback) en vez del plugin updater de Tauri, porque este último solo
@@ -129,5 +134,5 @@ Marca con [x] cuando esté hecho Y validado (no solo escrito).
   compartiendo el mismo punto de emisión? (hoy el diseño asume 1:1)
 - ~~¿El instalador/OS sigue siendo prioridad?~~ — resuelto: se retomó y se
   probó de punta a punta en VirtualBox (2026-09-27). Las preguntas que quedan
-  de esa parte (Wi-Fi, apagar/reiniciar desde el POS, prioridad de probar en
-  hardware real vs. seguir con el POS/CRM) están en la sección de arriba.
+  de esa parte (probar Wi-Fi/apagar-reiniciar en hardware real, prioridad de
+  probar en hardware vs. seguir con el POS/CRM) están en la sección de arriba.

@@ -98,8 +98,9 @@ primer arranque completo → reinicio al kiosco → emparejamiento con un códig
 `HANDOFF-pos-os.md` para el detalle de qué falló en el camino y cómo se arregló.
 
 **Sin probar todavía:** UEFI (todo lo de arriba fue en BIOS), hardware real (pantalla táctil, impresora,
-Wi-Fi real — el detector de red distingue cable/Wi-Fi pero nunca se probó con una tarjeta Wi-Fi real), y
-`.github/workflows/release.yml` (nunca se ejecutó; todas las releases hasta la 0.2.4 se armaron a mano).
+Wi-Fi real — el detector de red distingue cable/Wi-Fi y ya se puede conectar a una, pero nunca con una
+tarjeta Wi-Fi real: VirtualBox no simula ninguna), y `.github/workflows/release.yml` (nunca se ejecutó;
+todas las releases hasta la 0.2.4 se armaron a mano).
 
 ## Reglas que salen de este diseño
 
@@ -132,7 +133,7 @@ Wi-Fi real — el detector de red distingue cable/Wi-Fi pero nunca se probó con
 | 5 | Modo kiosco: autologin, Openbox arrancando la ventana, sin TTY ni atajos, reinicio automático si la ventana se cierra, barra de estado, F12 | `os/kiosk/` + `frontend/src/components/StatusBar.vue` | ✅ hecho y **probado en VirtualBox** |
 | 6 | Instalación desatendida: `autoinstall.yaml`, primer arranque y remasterizado de la ISO, ambos con pantalla estilo Hermes | `os/iso/`, `os/installer-ui/` | ✅ hecho y **probado en VirtualBox** (BIOS; UEFI sin probar) |
 | 7 | Publicación en **GitHub Releases** de `facturero/pos` (repo público) | releases `v0.2.0` a `v0.2.4` publicadas | ✅ hecho; el CI de publicación automática (fase 3b) sigue sin ejecutarse |
-| 8 | Icono, nombre del equipo y marca; prueba en hardware real; Wi-Fi (conectar desde el POS, no solo detectar) | — | pendiente |
+| 8 | Icono, nombre del equipo y marca; prueba en hardware real (incluido Wi-Fi/NetworkManager, escrito pero solo probado con `fetch` simulado) | — | pendiente |
 
 ## Publicar una versión (pasos del dueño)
 
@@ -162,10 +163,12 @@ El repo es público y la clave privada de firma **nunca va al repo** (regla 2).
   el primer arranque **espera activamente** y avisa en pantalla cada 30 s, en vez de fallar.
 - **Hardware objetivo:** arquitectura (x86_64 casi seguro), pantalla táctil o no, impresora de tickets —
   sigue sin decidirse, y nada de esto se probó en hardware real todavía.
-- **Wi-Fi:** hoy el equipo asume cable con DHCP. La barra de estado del POS ya distingue cable/Wi-Fi, pero
-  no hay forma de CONFIGURAR una red Wi-Fi desde el equipo (ni en la instalación ni después). Pedido por
-  el dueño, no implementado: Ubuntu Server no trae herramientas de escaneo/conexión por defecto, así que
-  es más que agregar un botón — hay que meterlas en la ISO.
-- **Apagar/reiniciar desde la barra de estado del POS:** pedido por el dueño, no implementado todavía
-  (más simple que el Wi-Fi: una regla `sudoers` acotada a `systemctl reboot`/`poweroff` y un botón con
-  confirmación).
+- ~~**Wi-Fi**~~ (2026-09-27): se puede conectar desde la barra de estado del POS. El instalador agrega
+  `network-manager` y le entrega la gestión de red (netplan `renderer: NetworkManager`, sin tocar las
+  interfaces que ya configuró cloud-init) más una regla de polkit para que `nmcli` funcione sin sudo
+  desde el usuario `facturero` (el kiosco no tiene agente gráfico de polkit para autorizar). Backend:
+  `backend/src/system/wifi.ts` (parser de la salida `-t` de nmcli, con pruebas). **Sin probar con una
+  tarjeta Wi-Fi real** — VirtualBox no simula ninguna.
+- ~~**Apagar/reiniciar desde la barra de estado del POS**~~ (2026-09-27): hecho —
+  `backend/src/system/power.ts` + sudoers acotada a `systemctl reboot`/`poweroff` (nada de `ALL`) +
+  botón con `confirm()`.
