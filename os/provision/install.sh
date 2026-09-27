@@ -66,7 +66,8 @@ apt-get install -y --no-install-recommends \
   unattended-upgrades \
   libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1 librsvg2-common \
   libsoup-3.0-0 libjavascriptcoregtk-4.1-0 \
-  xorg xinit x11-xserver-utils openbox
+  xorg xinit x11-xserver-utils openbox \
+  network-manager
 
 # --- usuario facturero -------------------------------------------------------
 
@@ -198,6 +199,35 @@ sed -i "s|__NODE_DIR__|${NODE_DIR}|g" \
 printf '%s ALL=(root) NOPASSWD: %s restart facturero-backend, %s start facturero-backend\n' \
   "$FACTURERO_USER" "$SYSTEMCTL_BIN" "$SYSTEMCTL_BIN" > /etc/sudoers.d/facturero-updater
 chmod 440 /etc/sudoers.d/facturero-updater
+
+# sudoers mínima: apagar/reiniciar desde la barra de estado del POS (botón con confirmación en el
+# frontend). Solo esos dos comandos exactos — nada de "ALL", para que un compromiso del backend (que
+# corre como este mismo usuario) no pueda escalar a nada más que apagar el equipo.
+printf '%s ALL=(root) NOPASSWD: %s poweroff, %s reboot\n' \
+  "$FACTURERO_USER" "$SYSTEMCTL_BIN" "$SYSTEMCTL_BIN" > /etc/sudoers.d/facturero-power
+chmod 440 /etc/sudoers.d/facturero-power
+
+# Wi-Fi desde la barra de estado del POS: Ubuntu Server usa netplan+systemd-networkd por defecto, que
+# no tiene "escanear y conectar" interactivo. Se le entrega la red a NetworkManager (nmcli) sin tocar
+# la config de red que ya escribió el instalador (cloud-init) — un archivo nuevo con SOLO el renderer
+# hace que netplan fusione ese ajuste con las interfaces que ya estaban declaradas (dhcp por cable
+# sigue igual, ahora lo aplica NetworkManager en vez de networkd).
+log "Wi-Fi (NetworkManager)"
+mkdir -p /etc/netplan
+cat > /etc/netplan/90-facturero-networkmanager.yaml <<'EOF'
+network:
+  version: 2
+  renderer: NetworkManager
+EOF
+chmod 600 /etc/netplan/90-facturero-networkmanager.yaml
+systemctl unmask NetworkManager.service
+systemctl enable --now NetworkManager.service
+netplan apply || log "AVISO: netplan apply fallo; puede que la red no se entregue a NetworkManager hasta el reinicio"
+# Sin esto, `nmcli` desde el usuario `facturero` (sin sudo, ver system/wifi.ts) pide autenticacion
+# de polkit que nadie puede responder (no hay sesion grafica con agente de polkit en el kiosco). Con la
+# regla, cualquier accion de NetworkManager pedida por este usuario se permite directo.
+mkdir -p /etc/polkit-1/rules.d
+install -m 0644 "$SRC/provision/polkit-network.rules" /etc/polkit-1/rules.d/50-facturero-network.rules
 
 systemctl daemon-reload
 systemctl enable facturero-backend.service facturero-updater.timer

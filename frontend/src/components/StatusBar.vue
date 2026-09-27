@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { mdiClockOutline, mdiEthernet, mdiHelpNetworkOutline, mdiLanDisconnect, mdiWifi } from "@mdi/js";
-import { api } from "../api/client";
+import { mdiClockOutline, mdiEthernet, mdiHelpNetworkOutline, mdiLanDisconnect, mdiPower, mdiRestart, mdiWifi } from "@mdi/js";
+import { api, ApiError } from "../api/client";
 import Icon from "./Icon.vue";
+import WifiPanel from "./WifiPanel.vue";
 
 // Barra de estado inferior, como el "system bar" de Material: versión instalada, por dónde sale el equipo a la
 // red (cable / Wi-Fi / sin red) y la hora. La versión y la red las lee el backend local (/system/info: el
@@ -53,22 +54,70 @@ onUnmounted(() => {
   if (netTimer) clearInterval(netTimer);
   if (clockTimer) clearInterval(clockTimer);
 });
+
+// Apagar/reiniciar: cualquiera con acceso físico al kiosco ya podría hacerlo tirando del cable o con el
+// botón de encendido — esto solo evita que sea por accidente (confirm()). Sin pantalla de "apagando...":
+// si funciona, la pantalla se apaga sola; si falla (typ. desarrollo o sudoers mal puesto), se ve el error.
+const powerBusy = ref(false);
+const powerError = ref<string | null>(null);
+
+async function doPower(action: "poweroff" | "reboot"): Promise<void> {
+  const question = action === "poweroff" ? "¿Apagar el equipo?" : "¿Reiniciar el equipo?";
+  if (!confirm(question)) return;
+  powerBusy.value = true;
+  powerError.value = null;
+  try {
+    await api.post(`/system/${action}`);
+    // sin then: si el comando funcionó, el equipo se está apagando/reiniciando ya mismo
+  } catch (err) {
+    powerError.value = err instanceof ApiError ? err.message : "No se pudo completar la acción";
+    powerBusy.value = false;
+  }
+}
+
+const showWifi = ref(false);
 </script>
 
 <template>
   <footer
-    class="flex items-center justify-between h-6 px-3 shrink-0 bg-gray-100 border-t border-gray-200 text-xs text-gray-500"
+    class="relative flex items-center justify-between h-6 px-3 shrink-0 bg-gray-100 border-t border-gray-200 text-xs text-gray-500"
   >
+    <WifiPanel v-if="showWifi" @close="showWifi = false" />
+
     <span>{{ versionLabel }}</span>
     <div class="flex items-center gap-4">
-      <span class="flex items-center gap-1" :class="net.tone">
+      <span v-if="powerError" class="text-red-600">{{ powerError }}</span>
+      <button
+        type="button"
+        class="flex items-center gap-1 hover:text-gray-800"
+        :class="net.tone"
+        @click="showWifi = !showWifi"
+      >
         <Icon :path="net.icon" :size="14" />
         {{ net.label }}
-      </span>
+      </button>
       <span class="flex items-center gap-1">
         <Icon :path="mdiClockOutline" :size="14" />
         {{ time }}
       </span>
+      <button
+        type="button"
+        title="Reiniciar el equipo"
+        class="hover:text-gray-800 disabled:opacity-40"
+        :disabled="powerBusy"
+        @click="doPower('reboot')"
+      >
+        <Icon :path="mdiRestart" :size="14" />
+      </button>
+      <button
+        type="button"
+        title="Apagar el equipo"
+        class="hover:text-red-600 disabled:opacity-40"
+        :disabled="powerBusy"
+        @click="doPower('poweroff')"
+      >
+        <Icon :path="mdiPower" :size="14" />
+      </button>
     </div>
   </footer>
 </template>

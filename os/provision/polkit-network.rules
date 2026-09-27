@@ -1,0 +1,10 @@
+// Le da al usuario del kiosco (facturero) permiso para manejar NetworkManager sin pedir autenticación:
+// sin esto, `nmcli` (system/wifi.ts, llamado por el backend que corre como este mismo usuario) se queda
+// esperando una respuesta de polkit que nadie puede dar — el kiosco no tiene sesión gráfica con agente de
+// polkit para mostrar el diálogo. FACTURERO_USER en os/provision/install.sh es fijo ("facturero"); si
+// alguna vez se vuelve configurable, este archivo hay que plantillarlo igual que las unidades de systemd.
+polkit.addRule(function (action, subject) {
+  if (subject.user == "facturero" && action.id.indexOf("org.freedesktop.NetworkManager.") == 0) {
+    return polkit.Result.YES;
+  }
+});
