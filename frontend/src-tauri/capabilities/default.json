@@ -4,6 +4,10 @@
   "description": "Permisos base de la ventana principal del POS",
   "windows": ["main"],
   "permissions": [
-    "core:default"
-  ]
+    "core:default",
+    "allow-open-devtools"
+  ],
+  "remote": {
+    "urls": ["http://127.0.0.1:4000/*", "http://127.0.0.1:4080/*"]
+  }
 }

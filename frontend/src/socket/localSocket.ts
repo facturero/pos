@@ -9,9 +9,15 @@ import { io, Socket } from "socket.io-client";
 // sincronización) y el frontend reacciona al instante, sin consultar la API
 // en bucle.
 
-const LOCAL_SOCKET_URL =
-  import.meta.env.VITE_LOCAL_SOCKET_URL ??
-  (import.meta.env.PROD ? "" : "http://127.0.0.1:4001");
+// BUG real encontrado el 2026-09-27: con el orden anterior (VITE_LOCAL_SOCKET_URL ?? (PROD ? "" : "...")),
+// como frontend/.env define VITE_LOCAL_SOCKET_URL para desarrollo y Vite carga ese .env también en
+// `vite build` (no hay .env.production que lo tape), el "??" ganaba SIEMPRE y el build de producción
+// terminaba con la URL de desarrollo (:4001) grabada tal cual en el bundle — el socket local nunca conectaba
+// en ningún POS instalado, así que "desvinculación remota" y "sync.status" nunca llegaban a la pantalla sin
+// recargar. PROD se comprueba PRIMERO (mismo orden que api/client.ts) para que no dependa de qué haya en .env.
+const LOCAL_SOCKET_URL = import.meta.env.PROD
+  ? ""
+  : (import.meta.env.VITE_LOCAL_SOCKET_URL ?? "http://127.0.0.1:4001");
 
 let socket: Socket | null = null;
 
