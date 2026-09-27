@@ -9,6 +9,8 @@ autoinstall:
   locale: es_ES.UTF-8
   keyboard:
     layout: es
+  # Hora de Ecuador: sin esto el equipo queda en UTC y la barra inferior del POS muestra 5 horas de mas.
+  timezone: America/Guayaquil
   source:
     id: ubuntu-server-minimal
   identity:
