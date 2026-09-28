@@ -43,7 +43,7 @@ de IVA en la caja y stock real (siguen abiertas de sesiones anteriores).
   el bucle de reintentos, pero la pantalla de instalación mostraba un error asustador. Ahora `install.sh`
   espera hasta 60 s a resolver `github.com` antes de seguir. Verificado: dos instalaciones seguidas
   (pos-test13, pos-test14) con cero errores del actualizador y cero reintentos.
-- **Colores de las pantallas de texto**: en la consola de Linux, "negrita + color" (`[1;34m`) usa la
+- **Colores de las pantallas de texto**: en la consola de Linux, "negrita + color" (`ESC[1;34m`) usa la
   variante BRILLANTE (azul→12, verde→10, rojo→9), no el mismo índice; sin redefinirlos la barra y el nombre
   salían en el azul de fábrica aunque el 4 estuviera bien. Además, en la pantalla de texto del primer
   arranque la paleta no se aplicaba (fondo gris, barra morada): `console-setup` la vuelve a poner de fábrica
