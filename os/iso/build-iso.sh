@@ -76,7 +76,7 @@ loadfont unicode
 set menu_color_normal=white/black
 set menu_color_highlight=black/light-gray
 
-menuentry "Instalar Facturero POS" --id facturero-auto {
+menuentry "Instalar POS KIOSKO" --id facturero-auto {
     set gfxpayload=keep
     linux /casper/vmlinuz autoinstall ds=nocloud\;s=/cdrom/ quiet loglevel=0 systemd.show_status=false vt.global_cursor_default=0 ---
     initrd /casper/initrd
