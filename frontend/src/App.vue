@@ -7,10 +7,13 @@ import { useSyncStore } from "./stores/sync";
 import { useSetupStore } from "./stores/setup";
 import Icon from "./components/Icon.vue";
 import StatusBar from "./components/StatusBar.vue";
+import BrandLogo from "./components/BrandLogo.vue";
+import { useThemeStore } from "./stores/theme";
 
 const auth = useAuthStore();
 const sync = useSyncStore();
 const setup = useSetupStore();
+const theme = useThemeStore();
 const router = useRouter();
 
 // F12 abre el inspector de la webview (pestaña Red incluida): así se puede diagnosticar el equipo desde su
@@ -30,12 +33,14 @@ async function handleGlobalKeydown(e: KeyboardEvent): Promise<void> {
 onMounted(() => {
   // primero, para que un fallo en lo de abajo no impida registrar el listener del teclado
   window.addEventListener("keydown", handleGlobalKeydown);
+  theme.start();
   auth.restoreSession();
   setup.startUnlinkListener();
   sync.startSyncListener();
 });
 
 onUnmounted(() => {
+  theme.stop();
   setup.stopUnlinkListener();
   sync.stopSyncListener();
   window.removeEventListener("keydown", handleGlobalKeydown);
@@ -74,38 +79,39 @@ function handleLogout() {
 </script>
 
 <template>
-  <div class="h-full flex flex-col bg-gray-50">
+  <div class="h-full flex flex-col bg-page">
     <header
       v-if="auth.isAuthenticated"
-      class="flex items-center justify-between px-4 py-2 bg-white border-b border-gray-200 shrink-0"
+      class="flex items-center justify-between px-4 py-2 bg-surface border-b border-line shrink-0"
+      :class="theme.branding.logoPosition === 'right' ? 'flex-row-reverse' : ''"
     >
       <div class="flex items-center gap-3">
-        <span class="font-semibold text-gray-800 flex items-center gap-1.5">
-          <Icon :path="mdiStorefront" :size="18" class="text-brand-600" />
-          POS
-        </span>
+        <BrandLogo />
         <span
           class="text-xs px-2 py-0.5 rounded-full flex items-center gap-1"
           :class="sync.pendingSales > 0
-            ? 'bg-amber-100 text-amber-700'
+            ? 'bg-warning-soft text-warning'
             : sync.isOnline
-              ? 'bg-emerald-100 text-emerald-700'
-              : 'bg-gray-100 text-gray-500'"
+              ? 'bg-success-soft text-success'
+              : 'bg-surface-alt text-muted'"
         >
           <Icon :path="syncIcon" :size="14" />
           {{ syncLabel }}
         </span>
+        <span v-if="theme.branding.welcomeMessage" class="hidden lg:inline text-sm text-muted truncate max-w-xs">
+          {{ theme.branding.welcomeMessage }}
+        </span>
       </div>
       <div class="flex items-center gap-4 text-sm">
-        <router-link to="/" class="text-gray-600 hover:text-brand-600 flex items-center gap-1">
+        <router-link to="/" class="text-ink/80 hover:text-primary flex items-center gap-1">
           <Icon :path="mdiStorefront" :size="16" /> Vender
         </router-link>
-        <router-link to="/history" class="text-gray-600 hover:text-brand-600 flex items-center gap-1">
+        <router-link to="/history" class="text-ink/80 hover:text-primary flex items-center gap-1">
           <Icon :path="mdiHistory" :size="16" /> Historial
         </router-link>
-        <span class="text-gray-400">|</span>
-        <span class="text-gray-700">{{ auth.user?.name }}</span>
-        <button class="text-red-600 hover:text-red-700 flex items-center gap-1" @click="handleLogout">
+        <span class="text-muted/70">|</span>
+        <span class="text-ink/90">{{ auth.user?.name }}</span>
+        <button class="text-danger hover:text-danger-hover flex items-center gap-1" @click="handleLogout">
           <Icon :path="mdiLogout" :size="16" /> Salir
         </button>
       </div>

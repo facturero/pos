@@ -5,6 +5,7 @@ import { getDeviceId } from "../device-identity.js";
 import { getAccessToken, clearSessionCache, NotPairedError, AdminApiError } from "./admin-client.js";
 import { runSyncCycle } from "./scheduler.js";
 import { emitUnlinked } from "../local/socket.js";
+import { clearTheme, syncTheme } from "../theme/service.js";
 
 // Cliente socket.io hacia el hub del gateway (/ws). Sustituye la espera del
 // cron por un aviso inmediato: cuando el admin cambia el catálogo
@@ -72,6 +73,12 @@ async function connect(): Promise<void> {
       );
     });
 
+    // El CRM cambió un tema: si me toca (mi punto o "all"), lo pido. Es solo un aviso; el tema en
+    // sí se pide por REST con ETag, así que un aviso ajeno o repetido cuesta una respuesta 304.
+    socket.on("pos.theme.changed", (payload) => {
+      void handleThemeChanged(payload as { affectedEmissionPointIds?: string[] | "all" } | undefined);
+    });
+
     socket.on("pos.unlink", (payload) => {
       const deviceId = (payload as { deviceId?: string } | undefined)?.deviceId;
       void handleRemoteUnlink(deviceId);
@@ -105,6 +112,20 @@ async function connect(): Promise<void> {
         scheduleRetry("error inesperado");
       }
     }
+  }
+}
+
+async function handleThemeChanged(payload: { affectedEmissionPointIds?: string[] | "all" } | undefined): Promise<void> {
+  try {
+    const affected = payload?.affectedEmissionPointIds;
+    if (Array.isArray(affected)) {
+      const config = await prisma.posConfig.findUnique({ where: { id: 1 } });
+      if (!config || !affected.includes(config.emissionPointId)) return;
+    }
+    console.log("[realtime] cambio de tema recibido: sincronizando");
+    await syncTheme();
+  } catch (err) {
+    console.error("[realtime] no se pudo sincronizar el tema:", err instanceof Error ? err.message : err);
   }
 }
 
@@ -146,6 +167,7 @@ async function handleRemoteUnlink(deviceId: string | undefined): Promise<void> {
   disconnect();
   clearSessionCache();
   await prisma.posConfig.deleteMany({ where: { id: 1 } });
+  await clearTheme().catch((err) => console.error("[theme] no se pudo limpiar el tema:", err));
   emitUnlinked(deviceId);
 }
 

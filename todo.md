@@ -81,6 +81,10 @@ Marca con [x] cuando esté hecho Y validado (no solo escrito).
       rollback) en vez del plugin updater de Tauri, porque este último solo
       reemplaza el binario de la ventana y la app real es un backend Node con
       migraciones que Tauri no toca. `main.rs` **no** lleva el plugin.
+- [x] **Tematización del POS** (2026-09-28, ver `IMPLEMENTATION-pos-theming.md`): temas por organización con
+      override por caja, editor en el CRM, y la caja los aplica (colores, modo oscuro, tipografía, forma,
+      posiciones, marca). Hecho y probado con capturas; **falta**: desplegar el CRM (orden: org-service →
+      gateway → frontend), publicar el POS 0.3.0, y probar la subida real de imágenes de marca.
 - [ ] **Logo real** (`src-tauri/icons/`) — sigue con un placeholder generado
       automáticamente en el build (`os/window/build-window.sh`/Dockerfile,
       `make-icons.py`) para poder compilar sin bloquear todo lo demás.

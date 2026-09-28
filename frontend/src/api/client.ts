@@ -5,6 +5,12 @@ const BASE_URL = import.meta.env.PROD
   ? ""
   : (import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:4000");
 
+// URL absoluta de un recurso del backend local (p. ej. una imagen de marca del tema). En producción es
+// el mismo origen, así que queda relativa.
+export function apiUrl(path: string): string {
+  return `${BASE_URL}${path}`;
+}
+
 // Imagen de un producto ya descargada por el backend del POS (sin token: un <img> no puede mandarlo).
 export function productImageUrl(fileId: string): string {
   return `${BASE_URL}/product-images/${encodeURIComponent(fileId)}`;

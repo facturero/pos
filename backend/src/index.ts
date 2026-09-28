@@ -16,6 +16,7 @@ import { customerRoutes } from "./routes/customers.routes.js";
 import { syncRoutes } from "./routes/sync.routes.js";
 import { setupRoutes } from "./routes/setup.routes.js";
 import { systemRoutes } from "./routes/system.routes.js";
+import { themeRoutes } from "./routes/theme.routes.js";
 import { version } from "./version.js";
 import { startSyncScheduler } from "./sync/scheduler.js";
 import { startRealtime } from "./sync/realtime.js";
@@ -52,6 +53,7 @@ app.route("/customers", customerRoutes);
 app.route("/sync", syncRoutes);
 app.route("/setup", setupRoutes);
 app.route("/system", systemRoutes);
+app.route("/theme", themeRoutes);
 
 // En producción el backend sirve también la pantalla compilada (un solo
 // origen; la ventana de Tauri solo abre http://127.0.0.1:4000). Sin

@@ -4,12 +4,15 @@ import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import { useSetupStore } from "../stores/setup";
 import { ApiError } from "../api/client";
+import { useThemeStore } from "../stores/theme";
+import BrandLogo from "../components/BrandLogo.vue";
 
 const username = ref("");
 const password = ref("");
 const auth = useAuthStore();
 const router = useRouter();
 const setup = useSetupStore();
+const theme = useThemeStore();
 
 // "Volver a ingresar el código": por si se emparejó con un código equivocado. Pide confirmación (no debe
 // pasar por accidente) y el backend lo rechaza si hay ventas sin enviar.
@@ -42,54 +45,61 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="h-full flex items-center justify-center">
+  <div class="h-full flex items-center justify-center" :style="theme.loginBackgroundStyle">
     <form
-      class="bg-white shadow-sm rounded-xl p-8 w-full max-w-sm border border-gray-200"
+      class="bg-surface shadow-sm rounded-xl p-8 w-full max-w-sm border border-line"
       @submit.prevent="handleSubmit"
     >
-      <h1 class="text-xl font-semibold text-gray-800 mb-6 text-center">Iniciar sesión</h1>
+      <div v-if="theme.branding.showLogoOnLogin" class="flex justify-center mb-5">
+        <BrandLogo :height="44" byline />
+      </div>
+      <p v-if="theme.branding.welcomeMessage" class="text-sm text-muted text-center mb-4">
+        {{ theme.branding.welcomeMessage }}
+      </p>
 
-      <label class="block text-sm text-gray-600 mb-1">Usuario</label>
+      <h1 class="text-xl text-ink mb-6 text-center">Iniciar sesión</h1>
+
+      <label class="block text-sm text-ink/80 mb-1">Usuario</label>
       <input
         v-model="username"
         type="text"
         autofocus
-        class="w-full mb-4 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+        class="w-full mb-4 px-3 py-2 border border-line-strong rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/70"
       />
 
-      <label class="block text-sm text-gray-600 mb-1">Contraseña</label>
+      <label class="block text-sm text-ink/80 mb-1">Contraseña</label>
       <input
         v-model="password"
         type="password"
-        class="w-full mb-6 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+        class="w-full mb-6 px-3 py-2 border border-line-strong rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/70"
       />
 
-      <p v-if="auth.error" class="text-sm text-red-600 mb-4">{{ auth.error }}</p>
+      <p v-if="auth.error" class="text-sm text-danger mb-4">{{ auth.error }}</p>
 
       <button
         type="submit"
         :disabled="auth.loading"
-        class="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-medium py-2 rounded-lg transition"
+        class="w-full bg-primary hover:bg-primary-hover disabled:opacity-50 text-primary-on font-medium py-2 rounded-lg transition"
       >
         {{ auth.loading ? "Ingresando..." : "Ingresar" }}
       </button>
 
-      <div class="mt-6 pt-4 border-t border-gray-100 text-center">
-        <p v-if="unpairError" class="text-sm text-red-600 mb-2" role="alert">{{ unpairError }}</p>
+      <div class="mt-6 pt-4 border-t border-surface-alt text-center">
+        <p v-if="unpairError" class="text-sm text-danger mb-2" role="alert">{{ unpairError }}</p>
         <button
           v-if="!confirmingUnpair"
           type="button"
-          class="text-sm text-gray-500 hover:text-brand-600 underline"
+          class="text-sm text-muted hover:text-primary underline"
           @click="confirmingUnpair = true"
         >
           ¿Pusiste mal el código? Volver a ingresarlo
         </button>
-        <div v-else class="text-sm text-gray-600">
+        <div v-else class="text-sm text-ink/80">
           <p class="mb-3">Este equipo se desvinculará y volverá a pedir el código de 6 dígitos.</p>
           <div class="flex gap-2">
             <button
               type="button"
-              class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg"
+              class="flex-1 bg-surface-alt hover:bg-line text-ink/90 py-2 rounded-lg"
               @click="confirmingUnpair = false"
             >
               Cancelar
@@ -97,7 +107,7 @@ async function handleSubmit() {
             <button
               type="button"
               :disabled="unpairing"
-              class="flex-1 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white py-2 rounded-lg"
+              class="flex-1 bg-primary hover:bg-primary-hover disabled:opacity-50 text-primary-on py-2 rounded-lg"
               @click="unpair"
             >
               {{ unpairing ? "Volviendo..." : "Sí, volver" }}

@@ -314,3 +314,25 @@ model PosIdentity {
 
   @@map("pos_identity")
 }
+
+// Tema visual de esta caja — fila única (id fijo = 1). Es una COPIA del tema que el CRM
+// resuelve para este punto de emisión (override del punto -> tema predeterminado de la
+// organización -> integrado): la caja funciona sin conexión con la última copia, y se
+// borra al desvincular para que una caja reasignada no herede la marca anterior.
+// `configJson` es null cuando el CRM dice "usa el integrado". `etag` se manda como
+// If-None-Match para que consultar sin cambios sea barato. `assetsJson` lista las
+// imágenes de marca (logotipo, logotipo oscuro, fondo del acceso) ya descargadas.
+model PosTheme {
+  id         Int      @id @default(1)
+  themeId    String? // uuid del tema en el CRM (null = integrado)
+  name       String?
+  source     String   @default("builtin") // point | default | builtin
+  version    Int      @default(0)
+  etag       String?
+  configJson String? // tema ya saneado (ver src/theme/contract.ts)
+  assetsJson String   @default("[]") // [{ role, fileId, mime }]
+  fetchedAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("pos_theme")
+}

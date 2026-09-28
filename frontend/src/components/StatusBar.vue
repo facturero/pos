@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { mdiClockOutline, mdiEthernet, mdiHelpNetworkOutline, mdiLanDisconnect, mdiPower, mdiRestart, mdiWifi } from "@mdi/js";
+import { mdiClockOutline, mdiEthernet, mdiHelpNetworkOutline, mdiLanDisconnect, mdiPower, mdiRestart, mdiWeatherNight, mdiWeatherSunny, mdiWifi } from "@mdi/js";
 import { api, ApiError } from "../api/client";
+import { useThemeStore } from "../stores/theme";
 import Icon from "./Icon.vue";
 import WifiPanel from "./WifiPanel.vue";
 
@@ -13,6 +14,8 @@ interface SystemInfo {
   version: string | null;
   network: { type: "ethernet" | "wifi" | "none" | "unknown"; iface: string | null };
 }
+
+const theme = useThemeStore();
 
 const NETWORK_REFRESH_MS = 10_000;
 const info = ref<SystemInfo | null>(null);
@@ -34,13 +37,13 @@ const versionLabel = computed(() => (info.value ? (info.value.version ? `v${info
 const net = computed(() => {
   switch (info.value?.network.type) {
     case "ethernet":
-      return { icon: mdiEthernet, label: "Cable", tone: "text-emerald-600" };
+      return { icon: mdiEthernet, label: "Cable", tone: "text-success" };
     case "wifi":
-      return { icon: mdiWifi, label: "Wi-Fi", tone: "text-emerald-600" };
+      return { icon: mdiWifi, label: "Wi-Fi", tone: "text-success" };
     case "none":
-      return { icon: mdiLanDisconnect, label: "Sin red", tone: "text-red-600" };
+      return { icon: mdiLanDisconnect, label: "Sin red", tone: "text-danger" };
     default:
-      return { icon: mdiHelpNetworkOutline, label: "Red desconocida", tone: "text-gray-400" };
+      return { icon: mdiHelpNetworkOutline, label: "Red desconocida", tone: "text-muted/70" };
   }
 });
 
@@ -89,17 +92,20 @@ const showWifi = ref(false);
 </script>
 
 <template>
+  <!-- La barra se puede poner arriba o abajo (tema), pero NO se puede ocultar: es el control del usuario sobre su equipo. -->
   <footer
-    class="relative flex items-center justify-between h-6 px-3 shrink-0 bg-gray-100 border-t border-gray-200 text-xs text-gray-500"
+    data-compact-exempt
+    class="relative flex items-center justify-between h-6 px-3 shrink-0 bg-surface-alt border-line text-xs text-muted"
+    :class="theme.layout.statusBarPosition === 'top' ? 'order-first border-b' : 'border-t'"
   >
-    <WifiPanel v-if="showWifi" @close="showWifi = false" />
+    <WifiPanel v-if="showWifi" :below="theme.layout.statusBarPosition === 'top'" @close="showWifi = false" />
 
     <span>{{ versionLabel }}</span>
     <div class="flex items-center gap-4">
-      <span v-if="powerError" class="text-red-600">{{ powerError }}</span>
+      <span v-if="powerError" class="text-danger">{{ powerError }}</span>
       <button
         type="button"
-        class="flex items-center gap-1 hover:text-gray-800"
+        class="flex items-center gap-1 hover:text-ink"
         :class="net.tone"
         @click="showWifi = !showWifi"
       >
@@ -111,9 +117,18 @@ const showWifi = ref(false);
         {{ time }}
       </span>
       <button
+        v-if="theme.canToggleMode"
+        type="button"
+        :title="theme.mode === 'dark' ? 'Modo claro' : 'Modo oscuro'"
+        class="hover:text-ink"
+        @click="theme.toggleMode()"
+      >
+        <Icon :path="theme.mode === 'dark' ? mdiWeatherSunny : mdiWeatherNight" :size="14" />
+      </button>
+      <button
         type="button"
         title="Reiniciar el equipo"
-        class="hover:text-gray-800 disabled:opacity-40"
+        class="hover:text-ink disabled:opacity-40"
         :disabled="powerBusy"
         @click="askPower('reboot')"
       >
@@ -122,7 +137,7 @@ const showWifi = ref(false);
       <button
         type="button"
         title="Apagar el equipo"
-        class="hover:text-red-600 disabled:opacity-40"
+        class="hover:text-danger-hover disabled:opacity-40"
         :disabled="powerBusy"
         @click="askPower('poweroff')"
       >
@@ -132,32 +147,32 @@ const showWifi = ref(false);
 
     <div
       v-if="pendingPower"
-      class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 text-sm text-gray-700"
+      class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 text-sm text-ink/90"
       @click.self="pendingPower = null"
     >
-      <div class="bg-white rounded-xl p-6 w-full max-w-sm text-center">
+      <div class="bg-surface rounded-xl p-6 w-full max-w-sm text-center">
         <Icon
           :path="pendingPower === 'poweroff' ? mdiPower : mdiRestart"
           :size="32"
-          :class="pendingPower === 'poweroff' ? 'text-red-600' : 'text-gray-700'"
+          :class="pendingPower === 'poweroff' ? 'text-danger' : 'text-ink/90'"
           class="mx-auto mb-3"
         />
-        <h2 class="font-semibold text-gray-800 text-base mb-1">
+        <h2 class="text-ink text-base mb-1">
           {{ pendingPower === "poweroff" ? "¿Apagar el equipo?" : "¿Reiniciar el equipo?" }}
         </h2>
-        <p class="text-gray-500 mb-5">Se cerrará todo lo que esté abierto en el POS.</p>
+        <p class="text-muted mb-5">Se cerrará todo lo que esté abierto en el POS.</p>
         <div class="flex gap-2">
           <button
             type="button"
-            class="flex-1 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+            class="flex-1 py-2 rounded-lg border border-line-strong text-ink/90 hover:bg-page"
             @click="pendingPower = null"
           >
             Cancelar
           </button>
           <button
             type="button"
-            class="flex-1 py-2 rounded-lg text-white font-medium"
-            :class="pendingPower === 'poweroff' ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-600 hover:bg-brand-700'"
+            class="flex-1 py-2 rounded-lg font-medium"
+            :class="pendingPower === 'poweroff' ? 'bg-danger hover:bg-danger-hover text-danger-on' : 'bg-primary hover:bg-primary-hover text-primary-on'"
             @click="confirmPower"
           >
             {{ pendingPower === "poweroff" ? "Apagar" : "Reiniciar" }}

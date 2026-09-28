@@ -4,6 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
     <title>POS</title>
+    <script>
+      // Pinta el tema guardado ANTES de que se monte Vue: sin esto la caja arrancaría un instante con
+      // el aspecto de fábrica y saltaría al de la empresa. El tema en sí lo aplica stores/theme.ts.
+      try {
+        var v = JSON.parse(localStorage.getItem("pos_theme_vars") || "null");
+        if (v) {
+          var r = document.documentElement;
+          for (var k in v) if (k.indexOf("--") === 0) r.style.setProperty(k, String(v[k]));
+          if (v["--font-size"]) r.style.fontSize = v["--font-size"];
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body class="overscroll-none">
     <div id="app"></div>

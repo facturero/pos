@@ -9,6 +9,7 @@ import {
   getCountryCode,
   type RemoteProduct,
 } from "./admin-client.js";
+import { syncTheme } from "../theme/service.js";
 
 // Baja del admin y deja espejados localmente (por `remoteId`, uuid):
 // categorías, productos, usuarios y clientes (con contactos y direcciones).
@@ -53,6 +54,14 @@ export async function pullFromAdmin(): Promise<PullCounts> {
     succeeded++;
   } catch (err) {
     errors.push(`clientes: ${message(err)}`);
+  }
+
+  // El tema visual va aparte y NO cuenta como fuente de datos: si falla, la caja se queda con la
+  // copia anterior y la venta sigue igual (el aspecto nunca puede bloquear el cobro).
+  try {
+    await syncTheme();
+  } catch (err) {
+    errors.push(`tema: ${message(err)}`);
   }
 
   if (succeeded === 0) {

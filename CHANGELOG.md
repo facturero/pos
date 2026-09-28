@@ -24,6 +24,58 @@ de IVA en la caja y stock real (siguen abiertas de sesiones anteriores).
 
 ---
 
+## 2026-09-28 — Sesión: tematización del POS (CRM + caja)
+
+**Qué se hizo:** el cliente personaliza sus cajas desde el CRM. Un tema (colores, modo oscuro, tipografía,
+forma, posición de los elementos, marca) se define UNA vez para toda la organización y, si quiere una caja
+distinta, se le asigna otro solo a esa. Plan y decisiones en `IMPLEMENTATION-pos-theming.md` (raíz del proyecto).
+
+- **CRM (`organization-service`, gateway, `frontend`)**: biblioteca de temas por organización (`pos_themes`),
+  tema predeterminado, override por punto de emisión (`emission_points.pos_theme_id`), endpoint que resuelve el
+  tema de una caja con ETag, evento `organization.pos_theme.changed` → el gateway avisa `pos.theme.changed`.
+  Editor con vista previa en vivo, 4 puntos de partida (Clásico, Oscuro, Alto contraste, Cálido), aviso de
+  contraste (el servidor rechaza < 3:1) e imágenes de marca.
+- **Backend del POS (`src/theme/`, `routes/theme.routes.ts`)**: tabla `pos_theme` (migración
+  `20260928164203_pos_theme`), `syncTheme()` (pide el tema con `If-None-Match`; 404 = CRM anterior a los
+  temas, se ignora), `contract.ts` que SANEA campo a campo (un tema corrupto nunca deja la caja inservible;
+  ignora campos desconocidos; valida los `fileId` con la regla de las imágenes de producto), descarga de
+  imágenes de marca a `data/theme-assets/`, `GET /theme` y `GET /theme/assets/:id` (sin autenticación a
+  propósito: el login también lleva la marca). Se sincroniza en cada ciclo, al recibir `pos.theme.changed`, y
+  se BORRA al desvincular (una caja reasignada no hereda la marca anterior). El tema nunca cuenta como fuente
+  de datos del pull: si falla, la venta sigue.
+- **Frontend del POS**: los colores dejaron de estar escritos en las clases. Tailwind usa tokens semánticos
+  (`bg-surface`, `text-ink`, `bg-primary`...) que apuntan a variables CSS (`--c-*`) que `stores/theme.ts`
+  rellena; radios, sombras, ancho de borde y densidad (solo relleno/separación) también son variables. Modo
+  claro/oscuro/por horario + botón local del cajero (si el tema lo permite). Distribución: carrito
+  izquierda/derecha y ancho, categorías arriba/lateral/ocultas, columnas, 4 tarjetas de producto, barra de
+  estado arriba/abajo (nunca oculta). Fuentes EMPAQUETADAS (`@fontsource*`, solo subconjunto latino, carga
+  perezosa por familia con la API FontFace). Componente `BrandLogo`: imagen de la empresa o, sin ella, el
+  logotipo POS KIOSKO. Sin destello: `index.html` pinta las variables guardadas antes de montar Vue.
+- **Pruebas**: 52 del backend del POS (incluye una de integración de punta a punta contra un CRM simulado con
+  SQLite y las migraciones reales), 80 de organization-service, 13 del gateway, 78 del CRM. Verificado con
+  capturas en navegador (Clásico ≈ aspecto anterior; temas oscuro/compacto con logotipo, cart a la izquierda,
+  etc.).
+
+**Por qué así (no "corregir"):**
+- Las variantes (hover, tono suave, color del texto sobre el primario) las DERIVA el cliente; el tema solo
+  guarda 10 colores por modo.
+- El contrato se COPIA en tres sitios (organization-service, `pos/backend/src/theme/contract.ts`,
+  `pos/frontend/src/theme/theme.ts` y `frontend/src/types/posTheme.ts`): son repos separados. Se comprobó que
+  el tema "Clásico" es idéntico en todos; si se toca uno hay que tocar los demás.
+- La densidad solo escala `padding`/`gap`/`space`, nunca anchos ni altos, y en "compacto" los botones no bajan
+  de 40 px (regla en `style.css`; la barra de estado está exenta con `data-compact-exempt`).
+- Un SVG de marca se dibuja SIEMPRE con `<img>` (no ejecuta scripts) y se sirve con CSP `sandbox`.
+- Los temas NO son de pago (decisión del dueño).
+
+**Qué queda como consecuencia:**
+- Vive en la capa de APP: sale por release (0.3.0) y NO requiere regenerar la ISO.
+- Orden de despliegue del CRM: `organization-service` → `api-gateway-node` → `frontend`. Un POS 0.3.0 con un CRM
+  todavía sin temas funciona igual (el 404 se ignora).
+- Sin probar: subida real de imágenes a document-service; `organization-service` no comprueba que un `logoFileId`
+  exista ni sea de la misma organización (la caja lo valida al bajarlo).
+
+---
+
 ## 2026-09-28 — Sesión: marca POS KIOSKO, error de red con NetworkManager, colores de la consola
 
 **Qué se hizo:**

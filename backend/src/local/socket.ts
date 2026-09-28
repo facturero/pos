@@ -61,3 +61,9 @@ export function emitUnlinked(deviceId: string | null | undefined): void {
 export function emitSyncState(state: SyncState): void {
   io?.emit("sync.status", state);
 }
+
+// El tema visual cambió (o se borró al desvincular): el frontend lo vuelve a pedir y se
+// repinta sin recargar la pantalla.
+export function emitThemeChanged(): void {
+  io?.emit("theme.changed", {});
+}

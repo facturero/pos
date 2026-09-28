@@ -6,6 +6,49 @@ html, body, #app {
   height: 100%;
 }
 
+/* Valores del tema por defecto ("Clásico") para el instante previo a que el tema se aplique: las
+   variables reales las escribe stores/theme.ts en <html> (y el script de index.html antes de montar). */
+:root {
+  --c-bg: 249 250 251;
+  --c-surface: 255 255 255;
+  --c-surface-alt: 243 244 246;
+  --c-ink: 31 41 55;
+  --c-muted: 107 114 128;
+  --c-line: 229 231 235;
+  --c-line-strong: 205 208 213;
+  --c-primary: 37 99 235;
+  --c-primary-hover: 33 87 207;
+  --c-primary-soft: 233 240 253;
+  --c-on-primary: 255 255 255;
+  --c-success: 5 150 105;
+  --c-success-soft: 232 244 240;
+  --c-warning: 180 83 9;
+  --c-warning-soft: 248 236 228;
+  --c-danger: 220 38 38;
+  --c-danger-hover: 194 33 33;
+  --c-danger-soft: 251 233 233;
+  --c-on-danger: 255 255 255;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --heading-weight: 600;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: rgb(var(--c-ink));
+  background-color: rgb(var(--c-bg));
+}
+
+/* El grosor de los títulos lo decide el tema. */
+h1, h2, h3 {
+  font-weight: var(--heading-weight);
+}
+
+/* Objetivo táctil mínimo de 40 px aunque el tema elija densidad compacta: apretar la pantalla no
+   puede volver los botones imposibles de tocar. Solo actúa en "compact" (en las demás nada mide menos). */
+[data-density="compact"] :is(button, [role="button"], input:not([type="checkbox"]):not([type="radio"]), select):not([data-compact-exempt] *) {
+  min-height: 2.5rem;
+}
+
 /* Evita selección de texto accidental y el menú contextual del navegador
    en toda la UI del POS — comportamiento esperado de un kiosco táctil. */
 body {
@@ -16,4 +59,14 @@ body {
 input, textarea {
   -webkit-user-select: text;
   user-select: text;
+}
+
+/* Los campos de formulario no heredan colores: sin esto un tema oscuro dejaría cajas blancas con
+   texto claro. Con el tema "Clásico" se ven igual que antes (fondo blanco, texto oscuro). */
+input, select, textarea {
+  background-color: rgb(var(--c-surface));
+  color: rgb(var(--c-ink));
+}
+::placeholder {
+  color: rgb(var(--c-muted) / 0.7);
 }

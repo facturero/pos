@@ -86,48 +86,48 @@ onMounted(loadSales);
 <template>
   <div class="h-full overflow-y-auto p-4">
     <div class="flex items-center justify-between mb-4">
-      <h1 class="text-lg font-semibold text-gray-800 flex items-center gap-1.5">
-        <Icon :path="mdiHistory" :size="18" class="text-brand-600" />
+      <h1 class="text-lg text-ink flex items-center gap-1.5">
+        <Icon :path="mdiHistory" :size="18" class="text-primary" />
         Historial de ventas
       </h1>
     </div>
 
-    <div v-if="loading" class="text-sm text-gray-400">Cargando...</div>
+    <div v-if="loading" class="text-sm text-muted/70">Cargando...</div>
 
     <div v-else class="space-y-4">
      <section v-for="group in groups" :key="group.key">
-      <h2 class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2 px-1">{{ group.label }}</h2>
-      <div class="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+      <h2 class="text-xs uppercase tracking-wide text-muted mb-2 px-1">{{ group.label }}</h2>
+      <div class="bg-surface rounded-lg border border-line divide-y divide-surface-alt">
       <div v-for="(sale, index) in group.sales" :key="sale.id">
         <button
-          class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50"
+          class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-page"
           @click="toggleExpand(sale.id)"
         >
           <div>
-            <p class="text-sm font-medium text-gray-800">
+            <p class="text-sm font-medium text-ink">
               Venta #{{ group.sales.length - index }}
               <span
                 v-if="sale.status === 'VOIDED'"
-                class="ml-2 text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600"
+                class="ml-2 text-xs px-2 py-0.5 rounded-full bg-danger-soft text-danger"
               >
                 Anulada
               </span>
               <span
                 v-else-if="!sale.synced"
-                class="ml-2 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700"
+                class="ml-2 text-xs px-2 py-0.5 rounded-full bg-warning-soft text-warning"
               >
                 Pendiente de sync
               </span>
             </p>
-            <p class="text-xs text-gray-400">
+            <p class="text-xs text-muted/70">
               {{ new Date(sale.createdAt).toLocaleString() }} · {{ sale.user.name }}
             </p>
           </div>
           <div class="flex items-center gap-3">
-            <span class="font-semibold text-gray-800">${{ Number(sale.total).toFixed(2) }}</span>
+            <span class="font-semibold text-ink">${{ Number(sale.total).toFixed(2) }}</span>
             <button
               v-if="sale.status === 'COMPLETED'"
-              class="text-xs text-red-600 hover:text-red-700 flex items-center gap-1"
+              class="text-xs text-danger hover:text-danger-hover flex items-center gap-1"
               @click.stop="voidSale(sale.id)"
             >
               <Icon :path="mdiTrashCanOutline" :size="14" />
@@ -136,16 +136,16 @@ onMounted(loadSales);
           </div>
         </button>
 
-        <div v-if="expandedId === sale.id" class="px-4 pb-3 text-sm text-gray-600 space-y-1">
+        <div v-if="expandedId === sale.id" class="px-4 pb-3 text-sm text-ink/80 space-y-1">
           <div v-for="item in sale.items" :key="item.id" class="flex justify-between">
             <span>{{ item.quantity }}x {{ item.product.name }}</span>
             <span>${{ (Number(item.subtotal) + Number(item.taxAmount)).toFixed(2) }}</span>
           </div>
-          <div class="flex justify-between text-xs text-gray-400 pt-1 border-t border-gray-100">
+          <div class="flex justify-between text-xs text-muted/70 pt-1 border-t border-surface-alt">
             <span>Subtotal (sin IVA)</span>
             <span>${{ Number(sale.subtotal).toFixed(2) }}</span>
           </div>
-          <div class="flex justify-between text-xs text-gray-400">
+          <div class="flex justify-between text-xs text-muted/70">
             <span>IVA</span>
             <span>${{ Number(sale.tax).toFixed(2) }}</span>
           </div>
@@ -154,7 +154,7 @@ onMounted(loadSales);
       </div>
      </section>
 
-      <p v-if="sales.length === 0" class="px-4 py-8 text-center text-sm text-gray-400">
+      <p v-if="sales.length === 0" class="px-4 py-8 text-center text-sm text-muted/70">
         No hay ventas en los últimos 3 días. El historial completo está en el CRM.
       </p>
     </div>

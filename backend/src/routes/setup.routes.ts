@@ -6,6 +6,7 @@ import { runSyncCycle } from "../sync/scheduler.js";
 import { connectRealtime } from "../sync/realtime.js";
 import { getDeviceId } from "../device-identity.js";
 import { emitUnlinked } from "../local/socket.js";
+import { clearTheme } from "../theme/service.js";
 
 // Rutas de "primer arranque": el frontend las consulta ANTES de mostrar el
 // login normal de cajero. Mientras `pos_config` esté vacía, el POS no sabe
@@ -108,6 +109,7 @@ setupRoutes.post("/forget", async (c) => {
     }
   }
   await prisma.posConfig.deleteMany({ where: { id: 1 } });
+  await clearTheme().catch((err) => console.error("[theme] no se pudo limpiar el tema:", err));
   clearSessionCache();
   emitUnlinked(await getDeviceId());
   return c.json({ ok: true });

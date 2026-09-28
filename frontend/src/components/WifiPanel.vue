@@ -8,6 +8,7 @@ import Icon from "./Icon.vue";
 // y si una está protegida pide la clave antes de conectar. Nada de esto se prueba con una tarjeta Wi-Fi
 // real (ver backend/src/system/wifi.ts): en VirtualBox no hay ninguna que escanear.
 
+defineProps<{ below?: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
 interface WifiNetwork {
@@ -75,34 +76,38 @@ onMounted(() => void refresh());
 </script>
 
 <template>
-  <div class="absolute bottom-full left-3 mb-1 w-72 max-h-80 flex flex-col rounded-md border border-gray-200 bg-white text-gray-700 shadow-lg text-xs">
-    <div class="flex items-center justify-between px-3 py-2 border-b border-gray-200">
+  <!-- Con la barra arriba (tema) el panel se abre hacia abajo; con la barra abajo, hacia arriba. -->
+  <div
+    class="absolute left-3 w-72 max-h-80 flex flex-col rounded-md border border-line bg-surface text-ink/90 shadow-lg text-xs"
+    :class="below ? 'top-full mt-1' : 'bottom-full mb-1'"
+  >
+    <div class="flex items-center justify-between px-3 py-2 border-b border-line">
       <span class="font-medium">Redes Wi-Fi</span>
       <div class="flex items-center gap-2">
-        <button type="button" title="Volver a escanear" class="hover:text-gray-900" @click="refresh">
+        <button type="button" title="Volver a escanear" class="hover:text-ink" @click="refresh">
           <Icon :path="mdiRefresh" :size="15" />
         </button>
-        <button type="button" title="Cerrar" class="hover:text-gray-900" @click="emit('close')">
+        <button type="button" title="Cerrar" class="hover:text-ink" @click="emit('close')">
           <Icon :path="mdiClose" :size="15" />
         </button>
       </div>
     </div>
 
     <div v-if="passwordTarget" class="p-3 flex flex-col gap-2">
-      <p class="text-gray-600">Contraseña de "{{ passwordTarget.ssid }}"</p>
+      <p class="text-ink/80">Contraseña de "{{ passwordTarget.ssid }}"</p>
       <input
         v-model="password"
         type="password"
         autofocus
-        class="border border-gray-300 rounded px-2 py-1 text-xs"
+        class="border border-line-strong rounded px-2 py-1 text-xs"
         @keydown.enter="doConnect(passwordTarget.ssid, password)"
       />
-      <p v-if="connectError" class="text-red-600">{{ connectError }}</p>
+      <p v-if="connectError" class="text-danger">{{ connectError }}</p>
       <div class="flex justify-end gap-2 mt-1">
-        <button type="button" class="px-2 py-1 text-gray-500 hover:text-gray-800" @click="passwordFor = null">Cancelar</button>
+        <button type="button" class="px-2 py-1 text-muted hover:text-ink" @click="passwordFor = null">Cancelar</button>
         <button
           type="button"
-          class="px-2 py-1 rounded bg-brand-600 text-white disabled:opacity-50"
+          class="px-2 py-1 rounded bg-primary text-primary-on disabled:opacity-50"
           :disabled="connecting === passwordTarget.ssid || !password"
           @click="doConnect(passwordTarget.ssid, password)"
         >
@@ -112,25 +117,25 @@ onMounted(() => void refresh());
     </div>
 
     <div v-else class="overflow-y-auto flex-1">
-      <p v-if="loading" class="p-3 text-gray-500">Buscando redes…</p>
-      <p v-else-if="listError" class="p-3 text-red-600">{{ listError }}</p>
-      <p v-else-if="networks.length === 0" class="p-3 text-gray-500">No se encontró ninguna red.</p>
+      <p v-if="loading" class="p-3 text-muted">Buscando redes…</p>
+      <p v-else-if="listError" class="p-3 text-danger">{{ listError }}</p>
+      <p v-else-if="networks.length === 0" class="p-3 text-muted">No se encontró ninguna red.</p>
       <button
         v-for="net in networks"
         :key="net.ssid"
         type="button"
-        class="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 disabled:opacity-50"
+        class="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-page disabled:opacity-50"
         :disabled="connecting === net.ssid"
         @click="pick(net)"
       >
-        <Icon :path="signalIcon(net.signal)" :size="15" :class="net.active ? 'text-emerald-600' : 'text-gray-500'" />
-        <span class="flex-1 text-left truncate" :class="net.active ? 'font-medium text-emerald-700' : ''">
+        <Icon :path="signalIcon(net.signal)" :size="15" :class="net.active ? 'text-success' : 'text-muted'" />
+        <span class="flex-1 text-left truncate" :class="net.active ? 'font-medium text-success' : ''">
           {{ net.ssid }}{{ net.active ? " (conectado)" : "" }}
         </span>
-        <Icon :path="net.secured ? mdiLock : mdiLockOpenVariant" :size="13" class="text-gray-400" />
-        <span v-if="connecting === net.ssid" class="text-gray-500">…</span>
+        <Icon :path="net.secured ? mdiLock : mdiLockOpenVariant" :size="13" class="text-muted/70" />
+        <span v-if="connecting === net.ssid" class="text-muted">…</span>
       </button>
-      <p v-if="connectError && !passwordTarget" class="p-3 text-red-600">{{ connectError }}</p>
+      <p v-if="connectError && !passwordTarget" class="p-3 text-danger">{{ connectError }}</p>
     </div>
   </div>
 </template>

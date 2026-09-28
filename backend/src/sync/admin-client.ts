@@ -471,3 +471,49 @@ export async function pushRemoteSale(payload: PushSalePayload): Promise<PushSale
   });
 }
 
+
+// --- Tema visual (organization-service) -------------------------------------
+
+export interface RemoteTheme {
+  source: "point" | "default" | "builtin";
+  themeId: string | null;
+  name: string | null;
+  version: number;
+  etag?: string | null;
+  schemaVersion: number;
+  /** null cuando el CRM dice "usa el integrado". Sin sanear: ver src/theme/contract.ts. */
+  config: unknown;
+}
+
+export type RemoteThemeResult =
+  | { status: "not-modified" }
+  | { status: "unavailable" } // CRM anterior a los temas (404): la caja se queda como está
+  | { status: "ok"; theme: RemoteTheme };
+
+// El tema YA resuelto para este punto de emisión (override -> predeterminado -> integrado). Con
+// `etag` manda If-None-Match: si no cambió, el CRM contesta 304 sin cuerpo. Va aparte de `request`
+// porque necesita ver el código de estado (304/404 no son errores aquí).
+export async function fetchRemoteTheme(
+  establishmentId: string,
+  emissionPointId: string,
+  etag?: string | null,
+): Promise<RemoteThemeResult> {
+  if (!GATEWAY_URL) throw new AdminApiError("ADMIN_API_BASE_URL no configurado en .env");
+  const url = `${GATEWAY_URL}/establishments/${encodeURIComponent(establishmentId)}/billing-points/${encodeURIComponent(emissionPointId)}/theme`;
+
+  const call = async (token: string): Promise<Response> =>
+    fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, ...(etag ? { "If-None-Match": etag } : {}) },
+      signal: AbortSignal.timeout(15_000),
+    });
+
+  let res = await call(await ensureValidToken());
+  if (res.status === 401) {
+    accessToken = null;
+    res = await call(await ensureValidToken());
+  }
+  if (res.status === 304) return { status: "not-modified" };
+  if (res.status === 404) return { status: "unavailable" };
+  if (!res.ok) throw new AdminApiError(`Admin API ${res.status}: ${await res.text().catch(() => "")}`);
+  return { status: "ok", theme: (await res.json()) as RemoteTheme };
+}
