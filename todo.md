@@ -52,7 +52,8 @@ Marca con [x] cuando esté hecho Y validado (no solo escrito).
 
 - [x] **El instalador/OS** — hecho y probado en VirtualBox el 2026-09-27 (ver
       `HANDOFF-pos-os.md` y `os/DISENO.md`, ambos reescritos esa sesión):
-  - [x] ISO de Ubuntu con `autoinstall.yaml`, pantalla estilo Hermes durante la
+  - [x] ISO de Ubuntu con `autoinstall.yaml`, marca POS KIOSKO (un producto de
+        noahsolutions, identidad visual propia) durante la
         instalación y el primer arranque
   - [x] Modo kiosco (Openbox, autologin, sin escritorio), barra de estado y
         F12 (inspector de la webview) en la pantalla del POS

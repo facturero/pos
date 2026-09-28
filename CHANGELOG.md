@@ -13,14 +13,59 @@ Antes de tocar código, lee también `rules.md` (reglas fijas) y `todo.md`
 ## Estado actual en una frase
 
 El sistema operativo del POS está **hecho y probado de punta a punta en VirtualBox**
-(2026-09-27): ISO autoinstalable de Ubuntu 24.04.5 → primer arranque (pantalla
-estilo Hermes) → kiosco → emparejamiento con un código real del CRM, y la app se
-actualiza sola desde GitHub Releases (`v0.2.0` a `v0.2.4` publicadas). Quedan sin
-probar: UEFI, hardware real, y el CI de publicación automática (`release.yml`,
-cada release hasta ahora se armó a mano). Ver `HANDOFF-pos-os.md` para el detalle
-completo, incluidos dos bugs reales (no cosméticos) que salieron de estas pruebas.
-Pendientes no-código: decisión de IVA en la caja y stock real (siguen abiertas de
-sesiones anteriores), Wi-Fi y apagar/reiniciar desde la barra de estado del POS.
+(2026-09-28): ISO autoinstalable de Ubuntu 24.04.5 (menú "Instalar POS KIOSKO") → primer
+arranque → kiosco → emparejamiento con un código real del CRM, con la marca **POS KIOSKO
+(un producto de noahsolutions)**, y la app se actualiza sola desde GitHub Releases
+(`v0.2.0` a `v0.2.6` publicadas). El kiosco ya tiene apagar/reiniciar y Wi-Fi en la barra
+de estado (Wi-Fi sin probar con una tarjeta real). Quedan sin probar: UEFI, hardware real,
+y el CI de publicación automática (`release.yml`, cada release hasta ahora se armó a
+mano). Ver `HANDOFF-pos-os.md` para el detalle completo. Pendientes no-código: decisión
+de IVA en la caja y stock real (siguen abiertas de sesiones anteriores).
+
+---
+
+## 2026-09-28 — Sesión: marca POS KIOSKO, error de red con NetworkManager, colores de la consola
+
+**Qué se hizo:**
+- **Marca**: en las tres pantallas de instalación (Ubuntu en texto, primer arranque en texto y gráfico) y
+  en el menú de GRUB ahora dice **POS KIOSKO** con "un producto de noahsolutions" debajo (antes:
+  "noahsolutions.com").
+- **Identidad visual propia, a propósito**: el diseño anterior imitaba demasiado al instalador de Hermes
+  (azul eléctrico, serif condensada con cortes tipo stencil, botón con corchetes `[ INSTALANDO… ]`) y el
+  dueño pidió alejarse para no exponerse a un reclamo público. Ahora: verde azulado sobre gris cálido,
+  marca en sans pesada con "POS" en pastilla, cargador de puntos, detalle de comandos en una tarjeta
+  oscura tipo terminal con su propio scroll. La estructura (pasos a un lado, detalle al otro) se mantuvo:
+  es un patrón genérico de instaladores, lo que se cambió es lo distintivo.
+- **Bug real, introducido por mí el mismo día (Wi-Fi)**: `install.sh` hace `netplan apply` para entregarle
+  la red a NetworkManager; eso reinicia la red y NetworkManager vuelve a pedir la IP por DHCP. El paso
+  siguiente (el actualizador) arrancaba ~10 s después con la red a medio levantar y fallaba la primera vez
+  con `fetch failed` (journal de pos-test12: 08:12:00 falla, 08:12:15 reintento OK). Se recuperaba solo por
+  el bucle de reintentos, pero la pantalla de instalación mostraba un error asustador. Ahora `install.sh`
+  espera hasta 60 s a resolver `github.com` antes de seguir. Verificado: dos instalaciones seguidas
+  (pos-test13, pos-test14) con cero errores del actualizador y cero reintentos.
+- **Colores de las pantallas de texto**: en la consola de Linux, "negrita + color" (`[1;34m`) usa la
+  variante BRILLANTE (azul→12, verde→10, rojo→9), no el mismo índice; sin redefinirlos la barra y el nombre
+  salían en el azul de fábrica aunque el 4 estuviera bien. Además, en la pantalla de texto del primer
+  arranque la paleta no se aplicaba (fondo gris, barra morada): `console-setup` la vuelve a poner de fábrica
+  después de fijarla, así que `install-tui.py` y `firstboot-tui.py` la reafirman cada 5 s.
+- **Modal propio para apagar/reiniciar** (en vez del `confirm()` nativo, que salía como un diálogo crudo
+  "JavaScript - http://127.0.0.1:4000/setup"): icono y botón rojos para apagar, azules para reiniciar.
+- Releases `v0.2.5` (apagar/reiniciar/Wi-Fi) y `v0.2.6` (modal) publicadas y verificadas.
+
+**Qué queda como consecuencia:**
+- **Qué vive dónde (para saber cuándo hay que reinstalar)**: la app (backend + pantalla) se actualiza sola
+  desde GitHub Releases; TODO lo demás (scripts de `os/`, pantallas de instalación, marca de esas pantallas,
+  menú de GRUB, sudoers, NetworkManager, polkit, binario de la ventana Tauri) viaja en la ISO y **no lo
+  toca el actualizador**. Un equipo instalado con una ISO anterior a este día recibe los botones de
+  apagar/reiniciar/Wi-Fi por actualización de la app, pero **no funcionan** ahí (falta la regla de sudoers
+  y NetworkManager): hay que reinstalar con la ISO nueva. Hoy solo existen equipos de prueba.
+- Cualquier paso de `install.sh` que reinicie o reconfigure la red debe esperar a que vuelva antes de un
+  paso que necesite internet.
+- Los colores de la marca están en tres sitios (variables CSS de `installer-ui/index.html`, `PALETTE` de
+  `install-tui.py`, `NAME_HEX`/`BG_HEX`/`STATUS_HEX` de `brand.sh`): si se cambian, cambiar los tres.
+
+**Sin probar:** Wi-Fi con una tarjeta real (VirtualBox no simula ninguna) y el menú de GRUB nuevo (dura 5 s
+y no salió en ninguna captura).
 
 ---
 
@@ -29,9 +74,9 @@ sesiones anteriores), Wi-Fi y apagar/reiniciar desde la barra de estado del POS.
 **Qué se hizo:** se retomó el instalador/OS (parado desde el 2026-08, ver "Antes de esto" más abajo) y
 se probó de punta a punta en VirtualBox, varias veces, hasta que una instalación completa (ISO →
 autoinstall → primer arranque → kiosco → emparejamiento) funcionó sin intervención manual:
-- Pantalla de instalación de Ubuntu en modo texto y primer arranque en modo gráfico, ambos estilo
-  Hermes (pasos a la izquierda, comandos en vivo a la derecha) — `os/iso/install-tui.py`,
-  `os/installer-ui/`. Sin texto de consola visible en ningún momento (`os/iso/brand.sh`).
+- Pantalla de instalación de Ubuntu en modo texto y primer arranque en modo gráfico (pasos a un lado,
+  comandos en vivo al otro; el 2026-09-28 se rediseñó con identidad propia, ver arriba) —
+  `os/iso/install-tui.py`, `os/installer-ui/`. Sin texto de consola visible en ningún momento (`os/iso/brand.sh`).
 - El primer arranque espera activamente a que haya internet (antes llenaba la pantalla de errores de
   `apt` si no había red) y deja el equipo en zona horaria `America/Guayaquil`.
 - **Barra de estado inferior** en toda la pantalla del POS: versión, cable/Wi-Fi/sin red (el backend lo
