@@ -28,5 +28,9 @@
     "typescript": "^5.7.2",
     "vite": "^6.0.5",
     "vue-tsc": "^2.1.10"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "vue-demi@0.14.10": true
   }
 }
