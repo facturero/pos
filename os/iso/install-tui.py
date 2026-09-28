@@ -34,7 +34,11 @@ BYLINE = "un producto de noahsolutions"
 
 # Paleta de la marca (índice -> rrggbb). La consola de Linux solo tiene 16 colores: se redefinen los que se usan.
 # Verde azulado sobre gris cálido: identidad propia, distinta a propósito de la de otros instaladores.
-PALETTE = {0: "1f2933", 1: "d92d20", 2: "1a9a55", 4: "0e7c66", 5: "d7ece6", 7: "f7f7f5", 8: "66756f", 6: "cfd8d3"}
+# OJO: el "negrita + color" (\033[1;3Xm) de la consola de Linux usa la variante BRILLANTE (indices 8-15), no el
+# mismo indice: el azul en negrita es el 12, el verde el 10 y el rojo el 9. Sin redefinirlos, la barra y el nombre
+# salian en el azul/verde/rojo de fabrica (visto en pos-test13) aunque el 4, 2 y 1 estuvieran bien.
+PALETTE = {0: "1f2933", 1: "d92d20", 2: "2f8a5a", 4: "0e7c66", 5: "d7ece6", 6: "cfd8d3", 7: "f7f7f5", 8: "66756f",
+           9: "d92d20", 10: "2f8a5a", 12: "0e7c66"}
 RESET = "\033[0m"
 BG = "\033[47m"                      # fondo (color 7, casi blanco)
 INK = "\033[30m"                     # texto (color 0, azul muy oscuro)
@@ -221,9 +225,14 @@ def render(out, rows, cols, tick):
     out.flush()
 
 
+def apply_palette(out):
+    out.write("".join(f"\033]P{i:X}{hexv}" for i, hexv in PALETTE.items()))
+    out.flush()
+
+
 def setup_tty(out):
-    pal = "".join(f"\033]P{i:X}{hexv}" for i, hexv in PALETTE.items())
-    out.write(pal + "\033[?25l" + BG + INK + "\033[2J")
+    apply_palette(out)
+    out.write("\033[?25l" + BG + INK + "\033[2J")
     out.flush()
     if shutil.which("chvt"):
         subprocess.run(["chvt", VT], check=False)
@@ -244,6 +253,8 @@ def main():
             cols, rows = os.get_terminal_size(out.fileno())
         except OSError:
             pass
+        if tick % 10 == 0:
+            apply_palette(out)   # algo del arranque (console-setup) vuelve a poner la paleta de fabrica: se reafirma
         render(out, rows, cols, tick)
         tick += 1
         time.sleep(0.5)

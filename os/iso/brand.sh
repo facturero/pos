@@ -38,7 +38,7 @@ center() {
 }
 
 # paleta de la marca, cursor oculto, fondo (color 7) + texto azul (4), y limpiar (rellena con el fondo activo)
-printf '\033]P7%s\033]P4%s\033]P8%s' "$BG_HEX" "$NAME_HEX" "$STATUS_HEX" >> "$DEV"
+printf '\033]P7%s\033]P4%s\033]PC%s\033]P8%s' "$BG_HEX" "$NAME_HEX" "$NAME_HEX" "$STATUS_HEX" >> "$DEV"   # 4 y 12 (el "negrita" usa el 12)
 printf '\033[?25l\033[47;34m\033[2J' >> "$DEV"
 mid=$(( rows / 2 ))
 printf '\033[1;34m' >> "$DEV"      # el nombre en verde azulado (color 4) y negrita

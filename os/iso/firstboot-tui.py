@@ -113,6 +113,8 @@ def main():
             cols, rows = os.get_terminal_size(out.fileno())
         except OSError:
             pass
+        if tick % 10 == 0:
+            tui.apply_palette(out)   # console-setup puede volver a poner la paleta de fabrica tras el arranque
         render(out, rows, cols, tick)
         tick += 1
         time.sleep(0.5)
