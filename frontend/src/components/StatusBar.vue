@@ -56,14 +56,24 @@ onUnmounted(() => {
 });
 
 // Apagar/reiniciar: cualquiera con acceso físico al kiosco ya podría hacerlo tirando del cable o con el
-// botón de encendido — esto solo evita que sea por accidente (confirm()). Sin pantalla de "apagando...":
-// si funciona, la pantalla se apaga sola; si falla (typ. desarrollo o sudoers mal puesto), se ve el error.
+// botón de encendido — este modal solo evita que sea por accidente. Un confirm() nativo se veía como un
+// diálogo crudo de navegador ("JavaScript - http://..."), fuera de lugar en una pantalla de kiosco sin
+// barra de direcciones a la vista; este modal usa el mismo estilo que el resto de diálogos del POS
+// (POSView.vue: tarjeta blanca centrada sobre fondo oscurecido). Sin pantalla de "apagando...": si
+// funciona, la pantalla se apaga sola; si falla (typ. desarrollo o sudoers mal puesto), se ve el error.
 const powerBusy = ref(false);
 const powerError = ref<string | null>(null);
+const pendingPower = ref<"poweroff" | "reboot" | null>(null);
 
-async function doPower(action: "poweroff" | "reboot"): Promise<void> {
-  const question = action === "poweroff" ? "¿Apagar el equipo?" : "¿Reiniciar el equipo?";
-  if (!confirm(question)) return;
+function askPower(action: "poweroff" | "reboot"): void {
+  powerError.value = null;
+  pendingPower.value = action;
+}
+
+async function confirmPower(): Promise<void> {
+  const action = pendingPower.value;
+  if (!action) return;
+  pendingPower.value = null;
   powerBusy.value = true;
   powerError.value = null;
   try {
@@ -105,7 +115,7 @@ const showWifi = ref(false);
         title="Reiniciar el equipo"
         class="hover:text-gray-800 disabled:opacity-40"
         :disabled="powerBusy"
-        @click="doPower('reboot')"
+        @click="askPower('reboot')"
       >
         <Icon :path="mdiRestart" :size="14" />
       </button>
@@ -114,10 +124,46 @@ const showWifi = ref(false);
         title="Apagar el equipo"
         class="hover:text-red-600 disabled:opacity-40"
         :disabled="powerBusy"
-        @click="doPower('poweroff')"
+        @click="askPower('poweroff')"
       >
         <Icon :path="mdiPower" :size="14" />
       </button>
+    </div>
+
+    <div
+      v-if="pendingPower"
+      class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 text-sm text-gray-700"
+      @click.self="pendingPower = null"
+    >
+      <div class="bg-white rounded-xl p-6 w-full max-w-sm text-center">
+        <Icon
+          :path="pendingPower === 'poweroff' ? mdiPower : mdiRestart"
+          :size="32"
+          :class="pendingPower === 'poweroff' ? 'text-red-600' : 'text-gray-700'"
+          class="mx-auto mb-3"
+        />
+        <h2 class="font-semibold text-gray-800 text-base mb-1">
+          {{ pendingPower === "poweroff" ? "¿Apagar el equipo?" : "¿Reiniciar el equipo?" }}
+        </h2>
+        <p class="text-gray-500 mb-5">Se cerrará todo lo que esté abierto en el POS.</p>
+        <div class="flex gap-2">
+          <button
+            type="button"
+            class="flex-1 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+            @click="pendingPower = null"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            class="flex-1 py-2 rounded-lg text-white font-medium"
+            :class="pendingPower === 'poweroff' ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-600 hover:bg-brand-700'"
+            @click="confirmPower"
+          >
+            {{ pendingPower === "poweroff" ? "Apagar" : "Reiniciar" }}
+          </button>
+        </div>
+      </div>
     </div>
   </footer>
 </template>
