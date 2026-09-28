@@ -56,17 +56,18 @@ def render(out, rows, cols, tick):
         buf.append(f"\033[{r};1H{BG}{INK}" + " " * cols)
 
     put(2, 3, tui.NAME, BLUE)
-    put(3, 3, "Preparando el equipo. Se hace una sola vez, tarda unos minutos y no hay que tocar nada.", GRAY)
-    put(5, 3, f"{done} de {n} pasos completos", GRAY)
-    put(5, left - len(f"{pct}%") + 1, f"{pct}%", GRAY)
+    put(3, 3, tui.BYLINE, GRAY)
+    put(4, 3, "Preparando el equipo. Se hace una sola vez, tarda unos minutos y no hay que tocar nada.", GRAY)
+    put(6, 3, f"{done} de {n} pasos completos", GRAY)
+    put(6, left - len(f"{pct}%") + 1, f"{pct}%", GRAY)
     barw = left - 3
     filled = int(barw * pct / 100)
-    put(6, 3, "█" * filled, BLUE)
-    put(6, 3 + filled, "█" * (barw - filled), tui.TRACK)
+    put(7, 3, "█" * filled, BLUE)
+    put(7, 3 + filled, "█" * (barw - filled), tui.TRACK)
 
     spin = "|/-\\"[tick % 4]
     for i, s in enumerate(steps):
-        r = 8 + i * 2
+        r = 9 + i * 2
         if s["state"] == "done":
             mark, style, txt = "√", tui.GREEN, INK
         elif s["state"] in ("running", "error"):
@@ -79,16 +80,16 @@ def render(out, rows, cols, tick):
         if t:
             put(r, left - len(t) + 1, t, GRAY)
     if st["error"]:
-        put(8 + n * 2, 3, tui.clip("Algo falló, se reintenta solo: " + st["error"], left - 2), tui.RED)
+        put(9 + n * 2, 3, tui.clip("Algo falló, se reintenta solo: " + st["error"], left - 2), tui.RED)
 
-    for r in range(5, rows):
+    for r in range(6, rows):
         put(r, left + 2, "│", tui.LINE)
-    put(5, rx, "Salida en vivo", BLUE)
+    put(6, rx, "Detalle de la instalación", BLUE)
     cnt = f"{len(st['log'])} líneas"
-    put(5, cols - len(cnt) - 1, cnt, GRAY)
-    room = rows - 7
+    put(6, cols - len(cnt) - 1, cnt, GRAY)
+    room = rows - 8
     for j, line in enumerate(st["log"][-room:]):
-        r = 7 + j
+        r = 8 + j
         if line.startswith("[install]"):
             put(r, rx, "-> ", BLUE)
             put(r, rx + 3, tui.clip(line[9:].strip(), rw - 3), "\033[1;30m")

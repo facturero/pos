@@ -3,18 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>noahsolutions.com</title>
+<title>POS KIOSKO</title>
 <style>
-  /* Pantalla de instalación del primer arranque, con el aspecto del instalador de Hermes: portada con la marca y,
-     después, pasos con barra a la izquierda y la salida de los comandos a la derecha, a toda la altura y sin caja.
-     Sin dependencias ni fuentes externas (puede no haber red todavía); se abre en una ventana a pantalla completa
-     (os/installer-ui/run.sh). Colores: cambiar solo las variables. */
+  /* Pantalla de instalación del primer arranque de POS KIOSKO (un producto de noahsolutions): portada con la
+     marca y, después, pasos con barra a la izquierda y la salida de los comandos en una tarjeta oscura a la
+     derecha. Identidad propia a propósito (verde azulado, marca en sans pesada con "POS" en pastilla, tarjeta de
+     terminal): que no se confunda con el instalador de otro producto. Sin dependencias ni fuentes externas
+     (puede no haber red todavía); se abre en una ventana a pantalla completa (os/installer-ui/run.sh).
+     Colores: cambiar solo las variables. */
   :root {
-    --bg: #f8f9fe; --line: #e6e9f4; --ink: #1c2233; --muted: #8a92a8; --faint: #b3b9cc;
-    --blue: #0057ff; --blue-soft: #e3ebff; --ok: #6b7fb0; --err: #d92d20;
+    --bg: #f7f7f5; --line: #e2e5df; --ink: #1f2933; --muted: #66756f; --faint: #a3aea9;
+    --accent: #0e7c66; --accent-soft: #d7ece6; --ok: #4f8f7c; --err: #d92d20;
+    --term-bg: #14201d; --term-ink: #cfe3dc;
     --mono: ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace;
     --sans: system-ui, "DejaVu Sans", "Segoe UI", Roboto, Arial, sans-serif;
-    --display: "DejaVu Serif", Georgia, "Times New Roman", serif;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
@@ -24,35 +26,34 @@
 
   /* --- portada --- */
   #cover.on { display: flex; align-items: center; justify-content: center; flex-direction: column; text-align: center; }
-  /* Marca alta y condensada, una sola línea, con cortes tipo "stencil" que atraviesan las letras (SVG: se ve igual
-     con cualquier fuente instalada). */
-  .wordmark { width: min(78vw, 980px); height: auto; overflow: visible; }
-  .wordmark text { font-family: var(--display); font-weight: 700; fill: var(--blue); }
-  .wordmark .cut { fill: var(--bg); }
-  .tag { margin-top: 26px; color: var(--muted); font-size: clamp(13px, 1.25vw, 18px); max-width: 70ch; padding: 0 24px; line-height: 1.5; }
-  .pill { margin-top: 36px; padding: 11px 22px; border: 1px solid #cfdcff; border-radius: 4px; background: #f3f6ff;
-          font: 700 11px/1 var(--mono); letter-spacing: .34em; color: var(--blue); }
-  .pill::before { content: "[ "; opacity: .5; } .pill::after { content: " ]"; opacity: .5; }
-  .pill i { font-style: normal; animation: blink 1.4s steps(2, start) infinite; } @keyframes blink { to { visibility: hidden; } }
+  .mark { display: flex; align-items: center; gap: .28em; font: 800 clamp(48px, 9.5vw, 130px)/1 var(--sans); letter-spacing: .01em; }
+  .mark .chip { background: var(--accent); color: #fff; border-radius: .16em; padding: .06em .22em .1em; }
+  .mark .word { color: var(--ink); }
+  .byline { margin: 18px 0 0; color: var(--muted); font-size: clamp(14px, 1.5vw, 21px); font-style: italic; letter-spacing: .02em; }
+  .tag { margin-top: 34px; color: var(--faint); font-size: clamp(12px, 1.1vw, 16px); max-width: 60ch; padding: 0 24px; line-height: 1.5; }
+  .dots { margin-top: 30px; display: flex; gap: 9px; }
+  .dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); opacity: .25; animation: pulse 1.2s ease-in-out infinite; }
+  .dots i:nth-child(2) { animation-delay: .2s; } .dots i:nth-child(3) { animation-delay: .4s; }
+  @keyframes pulse { 50% { opacity: 1; transform: scale(1.25); } }
 
   /* --- pantalla de pasos --- */
   #main { display: none; padding: 22px 26px 0; }
   #main.on { display: flex; flex-direction: column; }
   header { display: flex; gap: 14px; align-items: center; }
-  .logo { width: 38px; height: 38px; border-radius: 9px; background: var(--ink); display: grid; place-items: center; flex: none; }
-  .logo svg { width: 20px; height: 20px; }
-  h1 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -.005em; }
+  .logo { height: 36px; padding: 0 11px; border-radius: 9px; background: var(--accent); color: #fff; display: grid; place-items: center; flex: none;
+          font: 800 13px var(--sans); letter-spacing: .06em; }
+  h1 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -.005em; }
   header p { margin: 3px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
-  .cols { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 22px; }
-  .left { padding-right: 26px; min-height: 0; overflow: hidden; }
-  .right { border-left: 1px solid var(--line); padding-left: 26px; min-height: 0; display: flex; flex-direction: column; }
+  .cols { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 22px; }
+  .left { min-height: 0; overflow: hidden; }
+  .right { min-height: 0; display: flex; flex-direction: column; }
   body.nodetails .cols { grid-template-columns: 1fr; }
   body.nodetails .right { display: none; }
-  body.nodetails .left { padding-right: 0; max-width: 760px; margin: 0 auto; width: 100%; }
+  body.nodetails .left { max-width: 760px; margin: 0 auto; width: 100%; }
 
   .meta { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin-bottom: 7px; }
-  .bar { height: 4px; background: var(--blue-soft); border-radius: 99px; overflow: hidden; }
-  .bar b { display: block; height: 100%; width: 0; background: var(--blue); border-radius: 99px; transition: width .5s ease; }
+  .bar { height: 6px; background: var(--accent-soft); border-radius: 99px; overflow: hidden; }
+  .bar b { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; transition: width .5s ease; }
   ul { list-style: none; margin: 20px 0 0; padding: 0; }
   li { display: flex; align-items: center; gap: 10px; padding: 7px 2px; color: var(--muted); font-size: 12.5px; }
   li .lab { flex: 1; }
@@ -60,49 +61,46 @@
   li .ck { width: 14px; text-align: center; color: var(--ok); font-size: 12px; }
   li .sp { width: 14px; height: 14px; flex: none; }
   li.run { color: var(--ink); font-weight: 600; } li.run .t { color: var(--muted); }
-  li.run .sp { border: 2px solid var(--blue-soft); border-top-color: var(--blue); border-radius: 50%; animation: spin .8s linear infinite; }
-  li.done { color: #6c748c; } li.done .ck::before { content: "✓"; }
+  li.run .sp { border: 2px solid var(--accent-soft); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+  li.done { color: #5d6b66; } li.done .ck::before { content: "✓"; }
   li.err { color: var(--err); font-weight: 600; } li.err .ck::before { content: "!"; color: var(--err); font-weight: 800; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  .rhead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+  .rhead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
   .rhead b { font-size: 11.5px; font-weight: 600; } .rhead span { color: var(--muted); font-size: 11px; }
-  #log { flex: 1; min-height: 0; overflow-y: auto; font: 10.5px/1.5 var(--mono); color: #4b5470; padding-bottom: 14px; }
-  #log::-webkit-scrollbar { width: 8px; } #log::-webkit-scrollbar-thumb { background: #d6dbeb; border-radius: 99px; }
+  /* tarjeta de terminal: la salida de los comandos va aparte, con su propio scroll */
+  #log { flex: 1; min-height: 0; overflow-y: auto; background: var(--term-bg); border-radius: 12px; padding: 12px 14px;
+         font: 10.5px/1.5 var(--mono); color: var(--term-ink); margin-bottom: 14px; }
+  #log::-webkit-scrollbar { width: 8px; } #log::-webkit-scrollbar-thumb { background: #2f4740; border-radius: 99px; }
   .row { white-space: pre-wrap; word-break: break-word; }
-  .row.cmd { color: var(--ink); font-weight: 700; margin-top: 4px; }
-  .row.ok { color: #2f8a5a; } .row.bad { color: var(--err); font-weight: 600; }
-  #jump { position: fixed; right: 30px; bottom: 54px; display: none; padding: 7px 13px; border: 0; border-radius: 99px; background: var(--blue); color: #fff;
-          font: 600 11px var(--sans); box-shadow: 0 6px 16px rgba(0, 87, 255, .35); cursor: pointer; }
+  .row.cmd { color: #fff; font-weight: 700; margin-top: 4px; }
+  .row.ok { color: #6fd3a8; } .row.bad { color: #ff8a80; font-weight: 600; }
+  #jump { position: fixed; right: 34px; bottom: 58px; display: none; padding: 7px 13px; border: 0; border-radius: 99px; background: var(--accent); color: #fff;
+          font: 600 11px var(--sans); box-shadow: 0 6px 16px rgba(14, 124, 102, .35); cursor: pointer; }
   #jump.on { display: block; }
 
   footer { display: flex; justify-content: space-between; align-items: center; padding: 12px 0 14px; }
   #toggle { background: none; border: 0; padding: 4px 2px; color: var(--muted); font: 11px var(--sans); cursor: pointer; }
   #toggle::after { content: " ⌄"; } body.nodetails #toggle::after { content: " ›"; }
-  .foot-brand { color: var(--faint); font: 700 10px var(--mono); letter-spacing: .18em; }
+  .foot-brand { color: var(--faint); font: 11px var(--sans); }
+  .foot-brand b { color: var(--muted); font-weight: 800; letter-spacing: .04em; }
   #banner { display: none; margin-top: 16px; padding: 10px 12px; border-radius: 8px; font-size: 12.5px; }
   #banner.err { display: block; background: #fdecea; color: var(--err); }
-  #banner.done { display: block; background: #e8f7ee; color: #1a7a48; }
+  #banner.done { display: block; background: #e3f4ec; color: #17694a; }
 </style>
 </head>
 <body>
 
 <section id="cover" class="view on">
-  <!-- NOAHSOLUTIONS.COM en una línea: tinta azul, alto y condensado; las franjas claras cruzan las letras (stencil) -->
-  <svg class="wordmark" viewBox="0 0 1300 250" role="img" aria-label="noahsolutions.com">
-    <g transform="translate(0,222) scale(1,1.72)">
-      <text x="650" y="0" text-anchor="middle" font-size="118" textLength="1270" lengthAdjust="spacingAndGlyphs">NOAHSOLUTIONS.COM</text>
-    </g>
-    <rect class="cut" x="0" y="103" width="1300" height="6"/>
-    <rect class="cut" x="0" y="166" width="1300" height="4"/>
-  </svg>
-  <p class="tag">El equipo que crece contigo. Estamos preparando todo en segundo plano: tarda unos minutos.</p>
-  <div class="pill">INSTALANDO<i>…</i></div>
+  <div class="mark" role="img" aria-label="POS KIOSKO"><span class="chip">POS</span><span class="word">KIOSKO</span></div>
+  <p class="byline">un producto de noahsolutions</p>
+  <p class="tag">Estamos preparando todo en segundo plano: tarda unos minutos y no hay que tocar nada.</p>
+  <div class="dots"><i></i><i></i><i></i></div>
 </section>
 
 <section id="main" class="view">
   <header>
-    <div class="logo"><svg viewBox="0 0 32 32" fill="#fff"><path d="M6 26V6h4l12 13V6h4v20h-4L10 13v13z"/></svg></div>
+    <div class="logo">POS</div>
     <div>
       <h1 id="title">Preparando tu equipo</h1>
       <p id="sub">Es una configuración de una sola vez. El instalador está descargando componentes y configurando el equipo. En los próximos arranques se omite este paso.</p>
@@ -116,12 +114,12 @@
       <div id="banner"></div>
     </div>
     <div class="right">
-      <div class="rhead"><b>Salida en vivo</b><span id="lines">0 líneas</span></div>
+      <div class="rhead"><b>Detalle de la instalación</b><span id="lines">0 líneas</span></div>
       <div id="log"></div>
     </div>
   </div>
   <button id="jump" type="button">↓ ir al final</button>
-  <footer><button id="toggle" type="button">Ocultar detalles</button><span class="foot-brand">NOAHSOLUTIONS.COM</span></footer>
+  <footer><button id="toggle" type="button">Ocultar detalles</button><span class="foot-brand"><b>POS KIOSKO</b> · un producto de noahsolutions</span></footer>
 </section>
 
 <script>
@@ -134,7 +132,7 @@
   // para que el texto pequeño de la salida siga siendo legible (WebKit soporta `zoom`).
   const fit = () => { document.documentElement.style.zoom = String(Math.min(2, Math.max(1, innerWidth / 1000))); };
   fit(); addEventListener("resize", fit);
-  // Tiempos como en Hermes: 332ms, 9.4s, 42s, 1m 05s
+  // Tiempos: 332ms, 9.4s, 42s, 1m 05s
   const fmt = (s) => s == null ? "" : s < 1 ? `${Math.round(s * 1000)}ms` : s < 10 ? `${s.toFixed(1)}s` : s < 60 ? `${Math.round(s)}s` : `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, "0")}s`;
   const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
   let builtSteps = 0, pinned = true, shown = '';
@@ -147,7 +145,7 @@
   log.addEventListener("scroll", () => { pinned = log.scrollTop + log.clientHeight >= log.scrollHeight - 24; $("jump").classList.toggle("on", !pinned); });
   $("jump").addEventListener("click", () => { log.scrollTop = log.scrollHeight; });
 
-  // Salida como texto continuo: los pasos de install.sh ("[install] ...") salen como "-> ..." (igual que Hermes).
+  // Salida como texto continuo: los pasos de install.sh ("[install] ...") salen como "-> ...".
   function paintLog(lines) {
     // el servidor manda como maximo 300 lineas: al llegar al tope el largo ya no cambia, asi que se compara tambien la ultima
     const sig = lines.length + '|' + (lines[lines.length - 1] || '');

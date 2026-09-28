@@ -13,13 +13,14 @@
 # paleta de esta consola (ESC ] P n rrggbb) para usar los colores de la marca: fondo casi blanco (7), azul (4)
 # para el nombre y gris azulado (8) para el estado. Para cambiarlos, edita los tres valores hexadecimales
 # (o pasa BRAND_BG / BRAND_NAME / BRAND_STATUS).
-NAME="noahsolutions.com"
+NAME="POS KIOSKO"
+BYLINE="un producto de noahsolutions"
 STATUS="${1:-}"
 TTY_N="${BRAND_TTY:-9}"   # 9: systemd solo abre login (getty) en las consolas 1-6; en la 3 el login tapaba la marca
 DEV="${BRAND_DEV:-/dev/tty${TTY_N}}"   # BRAND_DEV: solo para pruebas (un archivo en vez de la consola)
-BG_HEX="${BRAND_BG:-f8f9fe}"
-NAME_HEX="${BRAND_NAME:-0057ff}"
-STATUS_HEX="${BRAND_STATUS:-7d859c}"
+BG_HEX="${BRAND_BG:-f7f7f5}"
+NAME_HEX="${BRAND_NAME:-0e7c66}"
+STATUS_HEX="${BRAND_STATUS:-66756f}"
 
 [ -c "$DEV" ] || [ -n "$BRAND_DEV" ] || exit 0
 
@@ -40,10 +41,11 @@ center() {
 printf '\033]P7%s\033]P4%s\033]P8%s' "$BG_HEX" "$NAME_HEX" "$STATUS_HEX" >> "$DEV"
 printf '\033[?25l\033[47;34m\033[2J' >> "$DEV"
 mid=$(( rows / 2 ))
-printf '\033[1;34m' >> "$DEV"      # el nombre en azul y negrita
+printf '\033[1;34m' >> "$DEV"      # el nombre en verde azulado (color 4) y negrita
 center "$mid" "$NAME"
-printf '\033[22;90m' >> "$DEV"     # el estado en gris (color 8); sin "0;": eso volvia al fondo negro
-[ -n "$STATUS" ] && center $(( mid + 2 )) "$STATUS"
+printf '\033[22;90m' >> "$DEV"     # "un producto de..." y el estado en gris (color 8); sin "0;": eso volvia al fondo negro
+center $(( mid + 1 )) "$BYLINE"
+[ -n "$STATUS" ] && center $(( mid + 3 )) "$STATUS"
 
 command -v chvt >/dev/null 2>&1 && chvt "$TTY_N" 2>/dev/null
 exit 0

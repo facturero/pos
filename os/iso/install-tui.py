@@ -29,10 +29,12 @@ TTY = os.environ.get("TUI_TTY", "/dev/tty9")
 VT = re.sub(r"\D", "", TTY) or "9"
 PORT = int(os.environ.get("TUI_PORT", "8765"))
 EVENTS_LOG = os.environ.get("TUI_EVENTS_LOG", "/run/facturero-install-events.log")
-NAME = "noahsolutions.com"
+NAME = "POS KIOSKO"
+BYLINE = "un producto de noahsolutions"
 
 # Paleta de la marca (índice -> rrggbb). La consola de Linux solo tiene 16 colores: se redefinen los que se usan.
-PALETTE = {0: "1c2233", 1: "d92d20", 2: "1a9a55", 4: "0057ff", 5: "dfe6f8", 7: "f8f9fe", 8: "7d859c", 6: "b7c0d8"}
+# Verde azulado sobre gris cálido: identidad propia, distinta a propósito de la de otros instaladores.
+PALETTE = {0: "1f2933", 1: "d92d20", 2: "1a9a55", 4: "0e7c66", 5: "d7ece6", 7: "f7f7f5", 8: "66756f", 6: "cfd8d3"}
 RESET = "\033[0m"
 BG = "\033[47m"                      # fondo (color 7, casi blanco)
 INK = "\033[30m"                     # texto (color 0, azul muy oscuro)
@@ -164,20 +166,21 @@ def render(out, rows, cols, tick):
         buf.append(f"\033[{r};1H{BG}{INK}" + " " * cols)
 
     put(2, 3, NAME, BLUE)
-    put(3, 3, "Instalando el sistema. Se hace una sola vez y no hay que tocar nada.", GRAY)
+    put(3, 3, BYLINE, GRAY)
+    put(4, 3, "Instalando el sistema. Se hace una sola vez y no hay que tocar nada.", GRAY)
 
     # progreso
-    put(5, 3, f"{done} de {n} pasos completos", GRAY)
-    put(5, left - len(f"{pct}%") + 1, f"{pct}%", GRAY)
+    put(6, 3, f"{done} de {n} pasos completos", GRAY)
+    put(6, left - len(f"{pct}%") + 1, f"{pct}%", GRAY)
     barw = left - 3
     filled = int(barw * pct / 100)
-    put(6, 3, "█" * filled, BLUE)
-    put(6, 3 + filled, "█" * (barw - filled), TRACK)
+    put(7, 3, "█" * filled, BLUE)
+    put(7, 3 + filled, "█" * (barw - filled), TRACK)
 
     # pasos
     spin = "|/-\\"[tick % 4]
     for i, (label, _) in enumerate(STEPS):
-        r = 8 + i * 2
+        r = 9 + i * 2
         if finished or i < reached:
             mark, style, txt = "√", GREEN, INK
             t = fmt_time(started.get(i + 1, time.time()) - started.get(i, time.time())) if i in started else ""
@@ -191,19 +194,19 @@ def render(out, rows, cols, tick):
         if t:
             put(r, left - len(t) + 1, t, GRAY)
     if error:
-        put(8 + n * 2, 3, clip("Algo falló: " + error, left - 2), RED)
+        put(9 + n * 2, 3, clip("Algo falló: " + error, left - 2), RED)
     if finished:
-        put(8 + n * 2, 3, "Listo. El equipo se reiniciará solo.", GREEN)
+        put(9 + n * 2, 3, "Listo. El equipo se reiniciará solo.", GREEN)
 
     # divisor y salida en vivo
-    for r in range(5, rows):
+    for r in range(6, rows):
         put(r, left + 2, "│", LINE)
-    put(5, rx, "Salida en vivo", BLUE)
+    put(6, rx, "Detalle de la instalación", BLUE)
     cnt = f"{count} línea{'s' if count != 1 else ''}"
-    put(5, cols - len(cnt) - 1, cnt, GRAY)
-    room = rows - 7
+    put(6, cols - len(cnt) - 1, cnt, GRAY)
+    room = rows - 8
     for j, (kind, text) in enumerate(lines[-room:]):
-        r = 7 + j
+        r = 8 + j
         if kind == "cmd":
             put(r, rx, "$ ", BLUE)
             put(r, rx + 2, clip(text, rw - 2), "\033[1;30m")

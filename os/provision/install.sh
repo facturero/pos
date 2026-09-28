@@ -90,7 +90,7 @@ else
   log "AVISO: no hay binario de la ventana ($WINDOW_BIN); el kiosco no mostrara nada (os/window/build-window.sh)"
 fi
 
-# --- pantalla de progreso (noahsolutions.com) -----------------------------------
+# --- pantalla de progreso (POS KIOSKO) -----------------------------------
 # Con paquetes de X y la ventana ya instalados, se abre una pantalla con los pasos y la salida en vivo (en
 # vez de texto de consola). Es cosmetica: si falla, la instalacion sigue igual.
 bash "$SRC/installer-ui/run.sh" start || log "AVISO: no se pudo abrir la pantalla de progreso (la instalacion sigue)"
@@ -223,6 +223,15 @@ chmod 600 /etc/netplan/90-facturero-networkmanager.yaml
 systemctl unmask NetworkManager.service
 systemctl enable --now NetworkManager.service
 netplan apply || log "AVISO: netplan apply fallo; puede que la red no se entregue a NetworkManager hasta el reinicio"
+# `netplan apply` reinicia la red y NetworkManager vuelve a pedir la IP por DHCP: sin esta espera el paso 5
+# (actualizador) arrancaba unos segundos despues con la red a medio levantar y fallaba la primera vez
+# ("fetch failed", visto en pos-test12 el 2026-09-28). Se recuperaba solo al reintentar, pero mostraba un error
+# asustador en la pantalla de instalacion. Hasta 60 s; si no vuelve, se sigue igual (el paso 5 ya reintenta).
+log "esperando a que vuelva la red tras entregarsela a NetworkManager..."
+for _ in $(seq 1 30); do
+  getent hosts github.com >/dev/null 2>&1 && break
+  sleep 2
+done
 # Sin esto, `nmcli` desde el usuario `facturero` (sin sudo, ver system/wifi.ts) pide autenticacion
 # de polkit que nadie puede responder (no hay sesion grafica con agente de polkit en el kiosco). Con la
 # regla, cualquier accion de NetworkManager pedida por este usuario se permite directo.
