@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { mdiClockOutline, mdiEthernet, mdiHelpNetworkOutline, mdiLanDisconnect, mdiPower, mdiRestart, mdiWeatherNight, mdiWeatherSunny, mdiWifi } from "@mdi/js";
+import { mdiClockOutline, mdiCog, mdiEthernet, mdiHelpNetworkOutline, mdiLanDisconnect, mdiPower, mdiRestart, mdiWeatherNight, mdiWeatherSunny, mdiWifi } from "@mdi/js";
 import { api, ApiError } from "../api/client";
 import { useThemeStore } from "../stores/theme";
 import Icon from "./Icon.vue";
 import WifiPanel from "./WifiPanel.vue";
+import SyncPanel from "./SyncPanel.vue";
 
 // Barra de estado inferior, como el "system bar" de Material: versión instalada, por dónde sale el equipo a la
 // red (cable / Wi-Fi / sin red) y la hora. La versión y la red las lee el backend local (/system/info: el
@@ -13,6 +14,7 @@ import WifiPanel from "./WifiPanel.vue";
 interface SystemInfo {
   version: string | null;
   network: { type: "ethernet" | "wifi" | "none" | "unknown"; iface: string | null };
+  mode: "kiosk" | "desktop";
 }
 
 const theme = useThemeStore();
@@ -33,6 +35,10 @@ async function refreshInfo(): Promise<void> {
 
 const time = computed(() => now.value.toLocaleTimeString("es-EC", { hour: "2-digit", minute: "2-digit" }));
 const versionLabel = computed(() => (info.value ? (info.value.version ? `v${info.value.version}` : "desarrollo") : ""));
+// Antes de que llegue /system/info se asume kiosk (el modo de siempre): así la barra no "parpadea"
+// mostrando de más y luego ocultando. En modo desktop (Windows, .exe) Windows ya da su propia hora
+// y su propio apagar/reiniciar en la barra de tareas, así que esta barra no los duplica.
+const isDesktop = computed(() => info.value?.mode === "desktop");
 
 const net = computed(() => {
   switch (info.value?.network.type) {
@@ -88,7 +94,18 @@ async function confirmPower(): Promise<void> {
   }
 }
 
+// Los dos paneles (Wi-Fi y sincronización) no se muestran a la vez: abrir uno cierra el otro,
+// para que no se superpongan sobre una barra tan angosta.
 const showWifi = ref(false);
+const showSync = ref(false);
+function toggleWifi(): void {
+  showSync.value = false;
+  showWifi.value = !showWifi.value;
+}
+function toggleSync(): void {
+  showWifi.value = false;
+  showSync.value = !showSync.value;
+}
 </script>
 
 <template>
@@ -99,6 +116,7 @@ const showWifi = ref(false);
     :class="theme.layout.statusBarPosition === 'top' ? 'order-first border-b' : 'border-t'"
   >
     <WifiPanel v-if="showWifi" :below="theme.layout.statusBarPosition === 'top'" @close="showWifi = false" />
+    <SyncPanel v-if="showSync" :below="theme.layout.statusBarPosition === 'top'" @close="showSync = false" />
 
     <span>{{ versionLabel }}</span>
     <div class="flex items-center gap-4">
@@ -107,12 +125,20 @@ const showWifi = ref(false);
         type="button"
         class="flex items-center gap-1 hover:text-ink"
         :class="net.tone"
-        @click="showWifi = !showWifi"
+        @click="toggleWifi"
       >
         <Icon :path="net.icon" :size="14" />
         {{ net.label }}
       </button>
-      <span class="flex items-center gap-1">
+      <button
+        type="button"
+        title="Sincronización: catálogo, clientes y usuarios"
+        class="hover:text-ink"
+        @click="toggleSync"
+      >
+        <Icon :path="mdiCog" :size="14" />
+      </button>
+      <span v-if="!isDesktop" class="flex items-center gap-1">
         <Icon :path="mdiClockOutline" :size="14" />
         {{ time }}
       </span>
@@ -126,6 +152,7 @@ const showWifi = ref(false);
         <Icon :path="theme.mode === 'dark' ? mdiWeatherSunny : mdiWeatherNight" :size="14" />
       </button>
       <button
+        v-if="!isDesktop"
         type="button"
         title="Reiniciar el equipo"
         class="hover:text-ink disabled:opacity-40"
@@ -135,6 +162,7 @@ const showWifi = ref(false);
         <Icon :path="mdiRestart" :size="14" />
       </button>
       <button
+        v-if="!isDesktop"
         type="button"
         title="Apagar el equipo"
         class="hover:text-danger-hover disabled:opacity-40"
@@ -146,7 +174,7 @@ const showWifi = ref(false);
     </div>
 
     <div
-      v-if="pendingPower"
+      v-if="pendingPower && !isDesktop"
       class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 text-sm text-ink/90"
       @click.self="pendingPower = null"
     >
