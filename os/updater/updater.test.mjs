@@ -201,6 +201,64 @@ test("migración que agota los reintentos: se queda mala, como antes", async () 
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, "state.json"), "utf8")).bad.includes("1.8.0"), true);
 });
 
+const mark = (marks, txt) => `node -e "require('fs').appendFileSync(process.argv[1],'${txt}\\n')" "${marks}"`;
+
+test("stopCmd: para la versión en curso ANTES de migrar y restartCmd la levanta después", async () => {
+  healthOk = true;
+  publish("1.0.0");
+  const root = newRoot();
+  await update(cfg(root));
+  publish("1.1.0");
+  const marks = path.join(root, "marks.txt");
+  const r = await update(cfg(root, {
+    stopCmd: mark(marks, "stop"), migrateCmd: mark(marks, "migrate"), restartCmd: mark(marks, "restart"),
+  }));
+  assert.equal(r.updated, true);
+  assert.equal(fs.readFileSync(marks, "utf8"), "stop\nmigrate\nrestart\n");
+});
+
+test("stopCmd no corre en la instalación inicial (no hay nada corriendo que parar)", async () => {
+  healthOk = true;
+  publish("1.0.0");
+  const root = newRoot();
+  const marks = path.join(root, "marks.txt");
+  fs.mkdirSync(root, { recursive: true });
+  await update(cfg(root, { stopCmd: mark(marks, "stop") }));
+  assert.equal(fs.existsSync(marks), false);
+});
+
+test("si la migración falla tras parar, devuelve la versión anterior al aire y marca la nueva mala", async () => {
+  healthOk = true;
+  publish("1.0.0");
+  const root = newRoot();
+  await update(cfg(root));
+  publish("1.1.0");
+  const marks = path.join(root, "marks.txt");
+  await assert.rejects(
+    update(cfg(root, { stopCmd: mark(marks, "stop"), migrateCmd: `node -e "process.exit(1)"`, restartCmd: mark(marks, "restart") })),
+    /migración/,
+  );
+  assert.equal(fs.readFileSync(marks, "utf8"), "stop\nrestart\n");
+  assert.equal(current(root), "1.0.0");
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, "state.json"), "utf8")).bad.includes("1.1.0"), true);
+});
+
+test("si stopCmd falla: se aborta sin marcar la versión como mala y se intenta dejar el servicio arriba", async () => {
+  healthOk = true;
+  publish("1.0.0");
+  const root = newRoot();
+  await update(cfg(root));
+  publish("1.1.0");
+  const marks = path.join(root, "marks.txt");
+  await assert.rejects(
+    update(cfg(root, { stopCmd: `node -e "process.exit(1)"`, migrateCmd: mark(marks, "migrate"), restartCmd: mark(marks, "restart") })),
+    /parar/,
+  );
+  assert.equal(fs.readFileSync(marks, "utf8"), "restart\n");
+  assert.equal(current(root), "1.0.0");
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, "state.json"), "utf8")).bad.includes("1.1.0"), false);
+});
+
 test("conserva solo las últimas versiones (keepReleases) sin borrar current ni previous", async () => {
   healthOk = true;
   const root = newRoot();

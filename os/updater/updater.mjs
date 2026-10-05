@@ -125,19 +125,25 @@ function prune(root, keep, protect) {
 // --- flujo principal -------------------------------------------------------
 
 /**
- * config: { root, manifestUrl, publicKey (PEM), migrateCmd?, restartCmd?, healthUrl?,
+ * config: { root, manifestUrl, publicKey (PEM), stopCmd?, migrateCmd?, restartCmd?, healthUrl?,
  *           healthTimeoutMs?=60000, keepReleases?=3, migrateRetries?=0, migrateRetryDelayMs?=3000, log? }
- * Los comandos se ejecutan con cwd = la versión nueva y RELEASE_DIR / RELEASE_VERSION en el entorno.
+ * Los comandos se ejecutan con cwd = la versión nueva y RELEASE_DIR / RELEASE_VERSION en el entorno
+ * (stopCmd, y el restartCmd de recuperación, con los de la versión que estaba corriendo).
+ *
+ * stopCmd (opcional): para la versión en curso justo antes de migrar; restartCmd la vuelve a
+ * levantar (con la nueva, o con la anterior si la migración falla). Verificado el 2026-10-04 en la
+ * VM de pruebas: con el backend ENCENDIDO, `prisma migrate deploy` falla SIEMPRE con "database is
+ * locked" (también sin migraciones pendientes), no a ratos; con el backend parado pasa. Python
+ * escribe en esa misma base sin problema, así que no es un bloqueo de SQLite sino de cómo el
+ * schema-engine de Prisma convive con otra conexión abierta (el backend de la pantalla). Costo:
+ * unos segundos sin servicio durante cada actualización.
  *
  * migrateRetries (por defecto 0, no cambia el comportamiento de siempre): reintentos de la
- * migración antes de darla por mala. Encontrado el 2026-09-29 con la 0.3.1 real en una caja con la
- * pantalla encendida: `prisma migrate deploy` corre en un PROCESO aparte del backend, así que no
- * hereda el `PRAGMA busy_timeout` que el backend se pone a sí mismo en db.ts — un choque de
- * "database is locked" contra la propia app (que sigue viva atendiendo la pantalla mientras se
- * actualiza) tira la migración a la primera, aunque sea puramente momentáneo. Como una versión que
- * "falla" aquí queda en `state.bad` para siempre (nunca se reintenta sola), un choque así de mala
- * suerte bloqueaba la actualización en firme. Los reintentos SON seguros: `prisma migrate deploy`
- * está pensado para poder correr varias veces sobre el mismo estado.
+ * migración antes de darla por mala. Se agregó el 2026-09-29 creyendo que el "database is locked"
+ * era un choque momentáneo; resultó NO serlo (ver stopCmd), así que NO arregla ese caso — solo
+ * sirve para fallos de verdad transitorios. Una versión que "falla" aquí queda en `state.bad` para
+ * siempre. Los reintentos SON seguros: `prisma migrate deploy` está pensado para poder correr
+ * varias veces sobre el mismo estado.
  */
 export async function update(config) {
   const log = config.log ?? ((m) => console.log(`[updater] ${m}`));
@@ -174,6 +180,25 @@ export async function update(config) {
     fs.renameSync(partial, releaseDir);
 
     const env = { ...process.env, RELEASE_DIR: releaseDir, RELEASE_VERSION: m.version };
+    const currentEnv = { ...process.env, RELEASE_DIR: path.join(root, "releases", String(current)), RELEASE_VERSION: String(current) };
+
+    // Se para la versión que está corriendo ANTES de migrar (solo si ya había una: en la
+    // instalación inicial no hay nada corriendo que parar). Si el parado falla no sabemos en qué
+    // estado quedó el servicio: se aborta SIN marcar la versión como mala (no es culpa de ella) y
+    // se intenta dejarlo levantado.
+    let stopped = false;
+    if (config.stopCmd && current) {
+      log("parando la versión en curso para migrar…");
+      try {
+        await run(config.stopCmd, { cwd: releaseDir, env: currentEnv });
+        stopped = true;
+      } catch (err) {
+        fs.rmSync(releaseDir, { recursive: true, force: true });
+        if (config.restartCmd) await run(config.restartCmd, { env: currentEnv }).catch(() => {});
+        throw new Error(`no se pudo parar la versión ${current}; se queda como está: ${err.message}`);
+      }
+    }
+
     try {
       if (config.migrateCmd) {
         log("migraciones…");
@@ -194,6 +219,9 @@ export async function update(config) {
       fs.rmSync(releaseDir, { recursive: true, force: true });
       state.bad.push(m.version);
       writeJsonAtomic(stateFile, state);
+      // La versión anterior quedó parada para migrar: hay que devolverla al aire, o la caja se
+      // queda sin servicio por un fallo que ni siquiera tocó su código.
+      if (stopped && config.restartCmd) await run(config.restartCmd, { env: currentEnv }).catch(() => {});
       throw new Error(`falló la migración; se queda la versión ${current}: ${err.message}`);
     }
 

@@ -24,6 +24,39 @@ de IVA en la caja y stock real (siguen abiertas de sesiones anteriores).
 
 ---
 
+## 2026-10-04 — Los reintentos de migración NO arreglaban nada; ahora el actualizador para el backend antes de migrar
+
+**Qué se hizo:** al probar la actualización 0.3.3 → 0.3.4 en la VM `pos-test-ssh1` (que ya tenía los
+reintentos de 2026-09-29) falló: 6 intentos en ~80 s, todos `database is locked`. Experimento
+aislado: con el backend ENCENDIDO, `prisma migrate deploy` falla siempre (incluso sin migraciones
+pendientes); con el backend PARADO pasa. Un `BEGIN IMMEDIATE` y un `CREATE TABLE` desde Python sobre
+esa misma base, con el backend encendido, funcionan — o sea que no es un bloqueo de SQLite sino de
+cómo el schema-engine de Prisma convive con otra conexión abierta. Causa raíz de fondo, sin
+resolver: no sabemos QUÉ hace el schema-engine para chocar (la base está en WAL); lo que sí está
+probado es la condición (backend vivo) y el arreglo (backend parado).
+
+**Arreglo:** `updater.mjs` acepta `stopCmd`; si hay una versión en curso, la para justo antes de
+migrar. `restartCmd` la levanta después (con la nueva) o, si la migración falla, con la anterior
+(sin esto la caja se quedaba sin servicio). Si `stopCmd` falla, se aborta SIN marcar la versión como
+mala (no es culpa suya). `restart-app.sh` gana un argumento `stop`; el sudoers no cambia (permite el
+script exacto con cualquier argumento). En la instalación inicial no se ejecuta. 4 tests nuevos
+(16 en total, en verde). Costo: unos segundos sin servicio en cada actualización.
+
+**Verificado en la VM** con el ciclo real (`systemctl start facturero-updater`): 0.3.3 → 0.3.4 en 9 s,
+`exit=0`, "parando… → migraciones… → listo", `/health` en 0.3.4, ventana relanzada. Los 2 únicos 404
+de assets son de la ventana VIEJA pidiendo sus hashes antes de que la matara el script; la nueva
+cargó todo con 200 y después hubo 0.
+
+**Qué queda como consecuencia:**
+- `updater.mjs`, `updater.json` y `restart-app.sh` son capa del sistema operativo: **las cajas ya
+  instaladas siguen con el actualizador viejo y NO pueden actualizarse** hasta recibir esto por
+  ISO nueva o aplicándolo a mano por SSH (como se hizo en la VM). Una release de la app no lo
+  arregla.
+- Los tags `v0.3.1`–`v0.3.3` apuntan a `44d498c`, que no tiene los arreglos con los que se armaron
+  esas releases; los paquetes publicados son correctos. `v0.3.4` sí apunta al commit bueno.
+
+---
+
 ## 2026-09-30 — Sesión: `restartCmd` también reinicia la ventana; arranca `pos/desktop/` (Electron) para Windows
 
 **Qué se hizo:** dos cosas independientes. La primera cierra un cabo suelto de la sesión anterior
@@ -108,6 +141,10 @@ actualización de la app desde 0.2.6, y llevaba ahí desde antes de esta sesión
    `updater.mjs` ahora acepta `migrateRetries`/`migrateRetryDelayMs` (opcional, por defecto 0 =
    comportamiento de siempre) y `provision/updater.json` los activa (5 intentos, 3 s). Dos pruebas
    nuevas en `updater.test.mjs` (12 casos en total, todos en verde).
+   **CORRECCIÓN 2026-10-04: este arreglo NO resuelve el problema.** El diagnóstico "choque
+   momentáneo" era erróneo. Ver la entrada de 2026-10-04 arriba: con el backend encendido el
+   bloqueo es permanente y los reintentos no sirven; lo que lo arregla es parar el backend antes
+   de migrar (`stopCmd`).
 
 **Un tercer hallazgo, de entorno, no de código:** en esa misma VM, `facturero-updater.timer`
 (solo `OnBootSec`, sin `OnCalendar`) nunca calculaba su próxima corrida — pero le pasaba

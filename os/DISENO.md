@@ -87,9 +87,10 @@ todo se mueve junto y se puede volver atrás.
   cada 30 s en la pantalla en vez de saturarla de errores de `apt`); Wi-Fi y apagar/reiniciar desde la barra de estado del POS (NetworkManager + regla de polkit + sudoers acotada, ver más abajo); tras `netplan apply` (que reinicia la red y hace que NetworkManager pida la IP otra vez) **espera hasta 60 s a resolver `github.com`** antes del paso del actualizador — sin esa espera el actualizador arrancaba con la red a medio levantar y fallaba la primera vez con `fetch failed` (pos-test12, 2026-09-28); se recuperaba solo al reintentar, pero mostraba un error asustador; y la **primera versión de la app
   se baja con el propio actualizador** lanzado por systemd (no `su`: la unidad aporta el
   `EnvironmentFile` que necesita `prisma migrate deploy`). `migrateCmd` corre
-  `prisma migrate deploy` desde `$RELEASE_DIR/backend` (con reintentos: `migrateRetries`/
-  `migrateRetryDelayMs`, ver nota 2026-09-29 en `updater.mjs` sobre `database is locked` contra la
-  propia app viva). `restartCmd` (`sudo __RESTART_SCRIPT__` → `os/provision/restart-app.sh`)
+  `prisma migrate deploy` desde `$RELEASE_DIR/backend`, **con el backend parado**: `stopCmd`
+  (`sudo __RESTART_SCRIPT__ stop`) lo para justo antes, porque con el backend vivo la migración
+  falla siempre con `database is locked` (verificado 2026-10-04; los reintentos `migrateRetries`
+  no lo arreglan, solo cubren fallos de verdad transitorios). `restartCmd` (`sudo __RESTART_SCRIPT__` → `os/provision/restart-app.sh`)
   reinicia el backend (tolera el primer arranque, `systemctl start` como rama del `||`) **y además
   mata la ventana del kiosco** (`pkill -f facturero-pos-app`; `launch.sh` la relanza sola) — sin
   esto la ventana se quedaba con los nombres de archivo `.js` con hash de la build anterior y

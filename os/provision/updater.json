@@ -3,6 +3,7 @@
   "manifestUrl": "https://github.com/facturero/pos/releases/latest/download/latest.json",
   "publicKeyFile": "/etc/facturero/release-public.pem",
   "migrateCmd": "cd \"$RELEASE_DIR/backend\" && ./node_modules/.bin/prisma migrate deploy",
+  "stopCmd": "sudo __RESTART_SCRIPT__ stop",
   "restartCmd": "sudo __RESTART_SCRIPT__",
   "healthUrl": "http://127.0.0.1:4000/health",
   "healthTimeoutMs": 90000,
