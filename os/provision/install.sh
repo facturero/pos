@@ -151,6 +151,9 @@ DATABASE_URL=file:${DB_DIR}/pos.db?connection_limit=1
 JWT_SECRET=${JWT_SECRET}
 POS_FRONTEND_DIST=${FACTURERO_APP}/current/frontend/dist
 POS_IMAGES_DIR=${DATA}
+# explicito (aunque "kiosk" ya es el default en backend/src/system/mode.ts): este instalador SOLO
+# aprovisiona equipos kiosco (ISO); el modo "desktop" es el .exe de Windows, ver desktop/README.md
+POS_MODE=kiosk
 EOF
   if [[ -n "$ADMIN_API_BASE" ]]; then
     echo "ADMIN_API_BASE_URL=${ADMIN_API_BASE}" >> "$ETC/pos.env"
@@ -173,14 +176,17 @@ chmod 750 "$DB_DIR"
 
 install -d "$UPDATE_CLI"
 install -m 0644 "$SRC/updater/updater.mjs" "$SRC/updater/cli.mjs" "$UPDATE_CLI/"
+# root:root 0755 (no 0644: hace falta +x) — lo ejecuta `facturero` vía sudo, nunca directo
+install -m 0755 -o root -g root "$SRC/provision/restart-app.sh" "$UPDATE_CLI/restart-app.sh"
 # la pública NO es secreto (regla 2); la privada jamás vive en el equipo
 install -m 0644 "$SRC/release/release-public.pem" "$ETC/release-public.pem"
 
 SYSTEMCTL_BIN="$(command -v systemctl)"
-# updater.json es plantilla: __SYSTEMCTL__ debe coincidir con la ruta de la
-# regla de sudoers (sudo exige el path exacto, no el nombre a secas)
-sed "s|__SYSTEMCTL__|${SYSTEMCTL_BIN}|g" "$SRC/provision/updater.json" \
-  > /tmp/updater.json.$$
+RESTART_SCRIPT="$UPDATE_CLI/restart-app.sh"
+# updater.json es plantilla: __SYSTEMCTL__ y __RESTART_SCRIPT__ deben coincidir con las rutas de
+# la regla de sudoers (sudo exige el path exacto, no el nombre a secas)
+sed -e "s|__SYSTEMCTL__|${SYSTEMCTL_BIN}|g" -e "s|__RESTART_SCRIPT__|${RESTART_SCRIPT}|g" \
+  "$SRC/provision/updater.json" > /tmp/updater.json.$$
 install -m 0640 -o root -g "$FACTURERO_USER" /tmp/updater.json.$$ "$ETC/updater.json"
 rm -f /tmp/updater.json.$$
 
@@ -195,9 +201,9 @@ sed -i "s|__NODE_DIR__|${NODE_DIR}|g" \
   /etc/systemd/system/facturero-backend.service \
   /etc/systemd/system/facturero-updater.service
 
-# sudoers mínima: el actualizador (user facturero) reinicia el backend sin clave
-printf '%s ALL=(root) NOPASSWD: %s restart facturero-backend, %s start facturero-backend\n' \
-  "$FACTURERO_USER" "$SYSTEMCTL_BIN" "$SYSTEMCTL_BIN" > /etc/sudoers.d/facturero-updater
+# sudoers mínima: el actualizador (user facturero) reinicia backend + ventana sin clave, solo con
+# este script exacto (restart-app.sh es root:root 0755, así que `facturero` no puede editarlo)
+printf '%s ALL=(root) NOPASSWD: %s\n' "$FACTURERO_USER" "$RESTART_SCRIPT" > /etc/sudoers.d/facturero-updater
 chmod 440 /etc/sudoers.d/facturero-updater
 
 # sudoers mínima: apagar/reiniciar desde la barra de estado del POS (botón con confirmación en el

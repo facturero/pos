@@ -79,15 +79,22 @@ todo se mueve junto y se puede volver atrás.
   `DATABASE_URL`, `JWT_SECRET`, `PORT=4000`, rutas de pantalla e imágenes (y `ADMIN_API_BASE_URL`
   solo si se pasó `--admin-api-base`); unidades `facturero-backend.service` (Restart=always) y
   `facturero-updater.service` + `.timer` (cada hora, `OnBootSec` 5 min + `RandomizedDelaySec` 10 min,
-  `Persistent`); sudoers mínima (`NOPASSWD: systemctl restart/start facturero-backend`, ruta exacta
-  detectada con `command -v` y la misma ruta plantillada en `updater.json` con `__SYSTEMCTL__`);
+  `OnCalendar=hourly` de respaldo, `Persistent`); sudoers mínima (`NOPASSWD:` un único script,
+  `restart-app.sh`, instalado root:root 0755 en `$UPDATE_CLI` — `facturero` no puede editarlo, y
+  sudo exige la ruta exacta, plantillada en `updater.json` con `__RESTART_SCRIPT__`);
   copia la clave pública a `/etc/facturero/release-public.pem`; ufw con todo lo entrante denegado;
   zona horaria `America/Guayaquil`; espera activa a que haya internet antes de instalar nada (avisa
   cada 30 s en la pantalla en vez de saturarla de errores de `apt`); Wi-Fi y apagar/reiniciar desde la barra de estado del POS (NetworkManager + regla de polkit + sudoers acotada, ver más abajo); tras `netplan apply` (que reinicia la red y hace que NetworkManager pida la IP otra vez) **espera hasta 60 s a resolver `github.com`** antes del paso del actualizador — sin esa espera el actualizador arrancaba con la red a medio levantar y fallaba la primera vez con `fetch failed` (pos-test12, 2026-09-28); se recuperaba solo al reintentar, pero mostraba un error asustador; y la **primera versión de la app
   se baja con el propio actualizador** lanzado por systemd (no `su`: la unidad aporta el
   `EnvironmentFile` que necesita `prisma migrate deploy`). `migrateCmd` corre
-  `prisma migrate deploy` desde `$RELEASE_DIR/backend`; `restartCmd` tolera el primer arranque
-  (cuando la unidad aún no está levantada, `systemctl start` como rama del `||`).
+  `prisma migrate deploy` desde `$RELEASE_DIR/backend` (con reintentos: `migrateRetries`/
+  `migrateRetryDelayMs`, ver nota 2026-09-29 en `updater.mjs` sobre `database is locked` contra la
+  propia app viva). `restartCmd` (`sudo __RESTART_SCRIPT__` → `os/provision/restart-app.sh`)
+  reinicia el backend (tolera el primer arranque, `systemctl start` como rama del `||`) **y además
+  mata la ventana del kiosco** (`pkill -f facturero-pos-app`; `launch.sh` la relanza sola) — sin
+  esto la ventana se quedaba con los nombres de archivo `.js` con hash de la build anterior y
+  pedía un asset que ya no existía (404) tras navegar, encontrado 2026-09-30 en una actualización
+  real de 0.3.2 a 0.3.3.
 
 - **Fase 5 (`os/kiosk/`)**: autologin del usuario `facturero` en **tty1** vía drop-in de `getty@tty1.service.d` (`agetty --autologin`; el usuario queda con `/bin/bash` para poder iniciar X — ver instalador); `tty2..6`, `ctrl-alt-del.target` y los objetivos de sueño/suspensión enmascarados; `.bash_profile` → `exec startx` (solo si `XDG_VTNR=1`), `.xinitrc` → `openbox-session`, `rc.xml` **sin menú ni binds por defecto** (un solo escritorio); autostart hace `source` de `/etc/facturero/kiosk.env` y lanza `launch.sh`, que **espera `/health` y mantiene la ventana viva** (`/opt/facturero/app/facturero-pos-app`, con reintento a los 2 s si muere), apaga salvapantallas/suspensión (`xset -dpms`) y oculta el cursor si `KIOSK_HIDE_CURSOR=1` (`xsetroot -cursor empty.xbm`). Acceso de servicio técnico: **SSH con clave SOLO desde `--allow-ssh-from CIDR`** en el instalador (ufw: `allow from <cidr> to any port 22`); **nada de contraseñas fijas**. La pantalla del POS lleva además una **barra de estado inferior** (versión, cable/Wi-Fi/sin red, hora — `frontend/src/components/StatusBar.vue` + `backend/src/system/network.ts`) y, con **F12**, abre el inspector de la webview (pestaña Red) sin SSH ni navegador aparte.
 

@@ -3,10 +3,20 @@ Description=Ejecuta el actualizador de la capa de aplicación una vez por hora
 # OnBootSec + RandomizedDelaySec: arranca al encender pero esparcido (los
 # equipos no golpean GitHub Releases todos a la vez). Persistent recupera
 # corridas perdidas con el equipo apagado.
+#
+# OnCalendar de respaldo (2026-09-30): en una VM de pruebas encontramos que un
+# temporizador SOLO monotónico (OnBootSec/OnStartupSec, sin nada de calendario)
+# se queda con "próxima corrida" sin calcular y nunca dispara — le pasa igual a
+# apport-autoreport.timer, de Ubuntu, sin que lo hayamos tocado, así que es una
+# rareza del entorno (probablemente el reloj virtualizado), no de esta unidad.
+# OnCalendar=hourly sí calcula bien ahí. Con los dos puestos, systemd dispara
+# con el que llegue primero: en una máquina sana es OnBootSec (más rápido tras
+# instalar); si ese falla por esto, OnCalendar es la red de seguridad.
 
 [Timer]
 OnBootSec=5min
 OnUnitActiveSec=1h
+OnCalendar=hourly
 RandomizedDelaySec=10min
 Persistent=true
 
