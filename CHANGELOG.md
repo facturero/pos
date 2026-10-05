@@ -24,6 +24,27 @@ de IVA en la caja y stock real (siguen abiertas de sesiones anteriores).
 
 ---
 
+## 2026-10-05 — Sync: un aviso del CRM con un ciclo en marcha ya no se pierde (0.3.7)
+
+**Qué pasó:** al crear 5 productos casi a la vez en el CRM (prueba de centavos con decimales), la caja
+`pos-test-nuevo` recibió 4 por tiempo real y el quinto ("Queso fresco") no apareció hasta forzar la
+sincronización a mano. Causa: `runSyncCycle()` hacía `if (isSyncing) return;`, así que un `catalog.changed`
+que llegaba con un ciclo ya corriendo se descartaba; el ciclo ya había leído el catálogo y el cambio no se
+veía hasta el ciclo programado (5 min después). Afectaba a productos y a los clientes en tiempo real.
+
+**Arreglo:** `backend/src/sync/coalesce.ts` — `coalesced(run)` no solapa ejecuciones y no pierde avisos: si
+la llaman con `run` en marcha, anota que hace falta repetir y corre UNA vez más al terminar (cien avisos
+juntos = una repetición). `scheduler.ts` exporta `runSyncCycle = coalesced(syncOnce)`. 7 pruebas en
+`coalesce.test.ts` (node:test + tsx); comprobado que 3 de ellas fallan con el comportamiento viejo.
+
+**Verificación de centavos (misma sesión):** venta de 24 líneas con 6 productos (precios con céntimos, IVA
+incluido y no, 15% y 0%, cantidades decimales, descuento de $9,37): caja $294,56 = factura producción
+`001-002-000000004` = cálculo exacto independiente, línea a línea y por tasa de IVA. Antes, venta de 18
+líneas con cantidades de 4 decimales: $358,95 en las tres. Nota: en las líneas con IVA incluido, facturación
+guarda `discount_cents` SIN IVA (127 → 110); es la conversión normal, la base coincide al céntimo.
+
+---
+
 ## 2026-10-05 — Logo: el chip "POS" más cuadrado y "POS" y "KIOSKO" centrados a la misma altura
 
 Midiendo la captura del kiosco real, el texto "POS" quedaba subido: 3 px de margen arriba y 12 abajo (el

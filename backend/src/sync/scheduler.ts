@@ -6,16 +6,10 @@ import { pushToAdmin } from "./push.js";
 import { syncProductImages } from "./images.js";
 import { getSyncState } from "./status.js";
 import { emitSyncState } from "../local/socket.js";
+import { coalesced } from "./coalesce.js";
 
-let isSyncing = false;
-
-// Corre pull + push en secuencia. Si ya hay un ciclo corriendo, se ignora
-// el disparo (evita sync solapados si el cron dispara mientras el anterior
-// sigue esperando la red, por ejemplo con internet lento).
-export async function runSyncCycle(): Promise<void> {
-  if (isSyncing) return;
-  isSyncing = true;
-
+// Un ciclo: pull + push en secuencia.
+async function syncOnce(): Promise<void> {
   try {
     // Sin emparejar, no hay organizationId/refreshToken con qué sincronizar.
     // Salir en silencio (sin loguear error cada 5 min) hasta que se empareje
@@ -59,7 +53,6 @@ export async function runSyncCycle(): Promise<void> {
       console.error("[sync] push falló:", err instanceof Error ? err.message : err);
     }
   } finally {
-    isSyncing = false;
     // Empuja el estado actualizado al frontend (indicador de sync) en tiempo
     // real, sin que tenga que consultar /sync/status por su cuenta.
     void getSyncState()
@@ -69,6 +62,11 @@ export async function runSyncCycle(): Promise<void> {
       );
   }
 }
+
+// Dispara un ciclo sin solaparlo con otro (el cron puede disparar mientras el anterior sigue esperando la
+// red) y SIN PERDER avisos: si llega un disparo con un ciclo en marcha —típicamente un "catalog.changed" del
+// CRM—, no se descarta, se repite el ciclo una vez al terminar (ver coalesce.ts).
+export const runSyncCycle = coalesced(syncOnce);
 
 // Programa el ciclo de sync en segundo plano. No bloquea el arranque del
 // servidor: la primera corrida se dispara poco después de levantar,
