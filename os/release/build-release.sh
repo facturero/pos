@@ -58,11 +58,17 @@ STAGE="${STAGE:-$(mktemp -d "${TMPDIR:-/tmp}/pos-stage-XXXXXX")}"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
 
+# Carpeta aparte para el .tar.gz que arma el propio contenedor (ver comentario en INNER, más abajo:
+# tiene que salir de Linux para no perder el +x de los binarios nativos). Separada de STAGE porque
+# STAGE se borra y se rellena de cero en cada corrida ("rm -rf /stage/*").
+PKGDIR="${STAGE}.pkg"
+mkdir -p "$PKGDIR"
+
 if [ "$(uname -s)" = "Linux" ]; then
-  REPO_HOST="$REPO_ROOT"; STAGE_HOST="$STAGE"
+  REPO_HOST="$REPO_ROOT"; STAGE_HOST="$STAGE"; PKGDIR_HOST="$PKGDIR"
 else
   # Git Bash: docker necesita rutas Windows y que no le conviertan "/stage".
-  REPO_HOST="$(cygpath -w "$REPO_ROOT")"; STAGE_HOST="$(cygpath -w "$STAGE")"
+  REPO_HOST="$(cygpath -w "$REPO_ROOT")"; STAGE_HOST="$(cygpath -w "$STAGE")"; PKGDIR_HOST="$(cygpath -w "$PKGDIR")"
 fi
 export MSYS_NO_PATHCONV=1
 
@@ -70,7 +76,7 @@ export MSYS_NO_PATHCONV=1
 # stdin a docker.exe (proceso nativo y Windows) de forma fiable.
 TMPD="$(mktemp -d "${TMPDIR:-/tmp}/pos-inner-XXXXXX")"
 if [ "$(uname -s)" = "Linux" ]; then TMPD_HOST="$TMPD"; else TMPD_HOST="$(cygpath -w "$TMPD")"; fi
-trap 'rm -rf "$TMPD"' EXIT
+trap 'rm -rf "$TMPD" "$PKGDIR"' EXIT
 
 INNER=$(cat <<'EOF'
 set -euo pipefail
@@ -119,6 +125,15 @@ echo "$BUILD_VERSION" > /stage/VERSION
 cp /stage/VERSION /stage/backend/dist/VERSION
 echo "== stage listo =="
 du -sh /stage
+
+# El .tar.gz se arma AQUI, dentro del contenedor Linux, y no despues en sign-release.mjs (que corre
+# en el host). Motivo real, encontrado el 2026-09-29 (release 0.3.0 rota): NTFS no tiene bit de
+# ejecucion; si el stage se empaqueta con el "tar" de Windows/Git Bash sobre la carpeta que Docker
+# Desktop monto desde el host, los binarios nativos (p. ej. el schema-engine de Prisma) pierden el
+# +x en el .tar.gz final aunque el smoke test (que SI corre dentro de Linux) los vea ejecutables sin
+# problema. El .tar.gz de aqui es el que de verdad se firma y se publica: tiene que salir de Linux.
+tar -C /stage -czf "/pkg/facturero-pos-${BUILD_VERSION}.tar.gz" .
+echo "== paquete .tar.gz armado dentro del contenedor (permisos de Linux preservados) =="
 EOF
 )
 printf '%s\n' "$INNER" > "$TMPD/inner.sh"
@@ -127,6 +142,7 @@ echo "== Construyendo ${VERSION} (stage: ${STAGE}) =="
 docker run --rm --name "pos-build-${TAG}" \
   -v "${REPO_HOST}:/workspace:ro" \
   -v "${STAGE_HOST}:/stage" \
+  -v "${PKGDIR_HOST}:/pkg" \
   -v "${TMPD_HOST}:/inner:ro" \
   -e BUILD_VERSION="$VERSION" \
   node:22-bookworm-slim bash /inner/inner.sh
@@ -144,9 +160,11 @@ if [ -n "$KEY" ]; then
     NODE_STAGE="$(cygpath -w "$STAGE")"
     NODE_OUT="$(cygpath -w "$OUT")"
   fi
+  if [ "$(uname -s)" = "Linux" ]; then NODE_TARBALL="$PKGDIR/facturero-pos-${VERSION}.tar.gz"; else NODE_TARBALL="$(cygpath -w "$PKGDIR/facturero-pos-${VERSION}.tar.gz")"; fi
   node "$SIGN_SCRIPT" \
     --version "$VERSION" \
     --stage "$NODE_STAGE" \
+    --tarball "$NODE_TARBALL" \
     --out "$NODE_OUT" \
     --url-base "$URL_BASE" \
     --key "$KEY"
@@ -168,7 +186,9 @@ if [ -n "$SMOKE" ]; then
     -e PORT=4000 \
     -e POS_FRONTEND_DIST=/opt/current/frontend/dist \
     node:22-bookworm-slim bash -c "apt-get update -qq >/dev/null && apt-get install -y -qq openssl >/dev/null && cd /opt/current/backend && ./node_modules/.bin/prisma migrate deploy && exec node dist/index.js" >/dev/null
-  trap 'docker rm -f "$CTN" >/dev/null 2>&1 || true' EXIT
+  # Reemplaza el trap anterior (solo puede haber uno activo): hay que seguir borrando TMPD/PKGDIR
+  # además del contenedor del smoke, si no se quedan sueltos en el temp cada vez que se usa --smoke.
+  trap 'docker rm -f "$CTN" >/dev/null 2>&1 || true; rm -rf "$TMPD" "$PKGDIR"' EXIT
 
   ok=false
   for _ in $(seq 1 40); do

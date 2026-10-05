@@ -38,19 +38,33 @@ const stage = path.resolve(need("stage"));
 const out = path.resolve(need("out"));
 const urlBase = need("url-base").replace(/\/$/, "");
 const privateKey = createPrivateKey(fs.readFileSync(need("key"), "utf8"));
+const prebuiltTarball = arg("tarball") ? path.resolve(arg("tarball")) : null;
 
 fs.mkdirSync(out, { recursive: true });
 const name = `facturero-pos-${version}.tar.gz`;
 fs.writeFileSync(path.join(stage, "VERSION"), version + "\n");
-// tar se ejecuta con cwd = stage y escribe el paquete en el directorio HERMANO ("../<nombre>"): una
-// ruta relativa corta funciona igual con GNU tar de Git Bash (que ve /tmp y C:\Users con raices
-// distintas: un "../../../.." largo hasta --out apuntaba fuera del arbol) y con bsdtar de Windows. Luego
-// se mueve a --out con fs.
-const sibling = path.join(path.dirname(stage), `.${name}.${process.pid}`);
-const r = spawnSync("tar", ["-czf", `../${path.basename(sibling)}`, "."], { cwd: stage, stdio: "inherit" });
-if (r.status !== 0) throw new Error("tar falló");
-fs.copyFileSync(sibling, path.join(out, name));
-fs.rmSync(sibling, { force: true });
+
+if (prebuiltTarball) {
+  // build-release.sh ya armó el .tar.gz DENTRO del contenedor Linux (ver su comentario): aquí solo
+  // se copia. Empaquetarlo en este script (que corre en el host, típicamente Windows) le hacía
+  // perder el +x a los binarios nativos del stage (p. ej. el schema-engine de Prisma) porque NTFS no
+  // tiene bit de ejecución — encontrado el 2026-09-29 cuando la 0.3.0 llegó al equipo sin poder
+  // correr `prisma migrate deploy` (EACCES) aunque el smoke test (dentro de Linux) la había pasado.
+  fs.copyFileSync(prebuiltTarball, path.join(out, name));
+} else {
+  // Modo standalone (p. ej. os/updater/updater.test.mjs, que arma su propio stage de prueba sin
+  // pasar por Docker): se empaqueta aquí mismo. Los binarios reales de un release de verdad SIEMPRE
+  // deben venir con --tarball desde build-release.sh; esta rama no lleva esa garantía de permisos.
+  // tar se ejecuta con cwd = stage y escribe el paquete en el directorio HERMANO ("../<nombre>"): una
+  // ruta relativa corta funciona igual con GNU tar de Git Bash (que ve /tmp y C:\Users con raices
+  // distintas: un "../../../.." largo hasta --out apuntaba fuera del arbol) y con bsdtar de Windows. Luego
+  // se mueve a --out con fs.
+  const sibling = path.join(path.dirname(stage), `.${name}.${process.pid}`);
+  const r = spawnSync("tar", ["-czf", `../${path.basename(sibling)}`, "."], { cwd: stage, stdio: "inherit" });
+  if (r.status !== 0) throw new Error("tar falló");
+  fs.copyFileSync(sibling, path.join(out, name));
+  fs.rmSync(sibling, { force: true });
+}
 
 const bytes = fs.readFileSync(path.join(out, name));
 const payload = Buffer.from(JSON.stringify({

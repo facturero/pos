@@ -165,6 +165,42 @@ test("si falla la migración, se queda la versión actual y se borra la nueva", 
   assert.equal(fs.existsSync(path.join(root, "releases", "1.4.0")), false);
 });
 
+test("migración con fallo transitorio (p. ej. 'database is locked'): reintenta y termina bien", async () => {
+  // Caso real (2026-09-29): `prisma migrate deploy` corre en un proceso aparte del backend y puede
+  // chocar un instante con la propia app si sigue viva (sin el busy_timeout que el backend se pone a
+  // sí mismo). Sin reintentos, ese choque tira la versión a `state.bad` para siempre.
+  healthOk = true;
+  publish("1.5.0");
+  const root = newRoot();
+  await update(cfg(root));
+  publish("1.6.0");
+  const counter = path.join(root, "intentos.txt");
+  // Falla las 2 primeras veces (código de salida 1) y responde bien a la tercera.
+  const migrateCmd =
+    `node -e "const fs=require('fs'); const f=process.argv[1]; ` +
+    `const n=fs.existsSync(f)?Number(fs.readFileSync(f,'utf8')):0; fs.writeFileSync(f,String(n+1)); ` +
+    `process.exit(n<2?1:0)" "${counter}"`;
+  const r = await update(cfg(root, { migrateCmd, migrateRetries: 2, migrateRetryDelayMs: 10 }));
+  assert.equal(r.updated, true);
+  assert.equal(current(root), "1.6.0");
+  assert.equal(fs.readFileSync(counter, "utf8"), "3"); // 2 fallos + el intento que sí funcionó
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, "state.json"), "utf8")).bad.includes("1.6.0"), false);
+});
+
+test("migración que agota los reintentos: se queda mala, como antes", async () => {
+  healthOk = true;
+  publish("1.7.0");
+  const root = newRoot();
+  await update(cfg(root));
+  publish("1.8.0");
+  await assert.rejects(
+    update(cfg(root, { migrateCmd: `node -e "process.exit(1)"`, migrateRetries: 2, migrateRetryDelayMs: 10 })),
+    /migración/,
+  );
+  assert.equal(current(root), "1.7.0");
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, "state.json"), "utf8")).bad.includes("1.8.0"), true);
+});
+
 test("conserva solo las últimas versiones (keepReleases) sin borrar current ni previous", async () => {
   healthOk = true;
   const root = newRoot();
