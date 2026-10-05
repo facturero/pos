@@ -24,6 +24,22 @@ de IVA en la caja y stock real (siguen abiertas de sesiones anteriores).
 
 ---
 
+## 2026-10-05 — Prueba AUTOMÁTICA de usuarios, roles, permisos y desactivación (sin release: solo pruebas)
+
+`npm run test:e2e` (en `pos/backend`; usa Docker) levanta un CRM simulado en localhost con la forma de auth-service (`/users` con `permissions`,
+`/roles`, `/permissions`, `/auth/refresh`, `/auth/login`), una base SQLite temporal con las migraciones REALES, y ejecuta el `pullFromAdmin()` y las rutas
+de login/sesión reales de la caja. No necesita el CRM ni credenciales. Corre en Linux dentro de Docker (mismo entorno que las releases) porque el binario
+nativo de argon2 lo bloquea el control de aplicaciones de algunas máquinas Windows. `npm test` corre las pruebas unitarias de sync.
+**16 escenarios:** entra quien tiene `pos:access` (Vendedor, Administrador→rol ADMIN) y no quien no (Solo lectura, Contador → 403); decide el permiso y no el
+nombre (rol personalizado); varios roles suman; quitarle el permiso a un rol cierra la sesión abierta (401) y devolverlo la recupera; `/users` sin
+`permissions` (auth-service anterior) se calcula con los roles; deshabilitar/habilitar; quitado del establecimiento; lista vacía no desactiva a nadie;
+cambio de contraseña (entra la nueva, la vieja no); contraseña incorrecta; usuario sin hash se valida contra el CRM y se vincula; CRM sin `pos:access` en
+su catálogo (nadie queda fuera) y luego con él; fallo de roles/catálogo no tumba el sync; sin conexión; usuario local. **Comprobado que detecta fallos:**
+rompiendo a propósito el control de `pos:access` y la comprobación de usuario activo, 6 de los 16 fallan.
+No cubre (solo se verificó a mano en producción): el camino real RabbitMQ → gateway → socket, que cubre `catalog-routing.test.ts` en el gateway.
+
+---
+
 ## 2026-10-05 — Permiso propio del POS: `pos:access` decide quién entra a la caja (0.3.12)
 
 **Decisión del dueño:** "Solo lectura" no debe poder cobrar, y la caja debe decidir por PERMISOS, no por nombre de rol; y mejor un permiso
