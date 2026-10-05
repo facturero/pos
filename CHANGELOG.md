@@ -24,6 +24,26 @@ de IVA en la caja y stock real (siguen abiertas de sesiones anteriores).
 
 ---
 
+## 2026-10-05 — Logo: el chip "POS" más cuadrado y "POS" y "KIOSKO" centrados a la misma altura
+
+Midiendo la captura del kiosco real, el texto "POS" quedaba subido: 3 px de margen arriba y 12 abajo (el
+relleno asimétrico de antes, `pt .06em / pb .1em`, estaba calibrado para otra tipografía). El hueco de una
+línea de texto se reparte según las métricas de la fuente y las mayúsculas no tienen descendentes, así que
+ningún relleno fijo sirve para todas las fuentes del tema. `BrandLogo.vue` ahora mide con canvas dónde cae
+la tinta de "POS" en una línea de 1em y la desplaza para centrarla (se vuelve a medir cuando termina de
+cargar la fuente). Además el chip es más "caja": esquinas casi rectas (`.08em`, antes `.16em`) y relleno
+equilibrado, proporción 1,98:1 (antes 2,24:1). Medido en el kiosco real tras actualizar: 10 px arriba / 8
+abajo (antes 3 / 12); validado también con seis tipografías en Chromium. Residual: ≤ 1 px horizontal por el
+espacio lateral propio de la "P".
+
+Segundo ajuste el mismo día (el dueño lo vio en la captura): "KIOSKO" quedaba unos píxeles MÁS ARRIBA que
+"POS" porque solo se había corregido el texto del chip; la palabra se centraba por su caja de línea, que
+tiene el mismo problema de métricas. Ahora las dos palabras se miden y se desplazan con la misma función.
+Medido en el kiosco real (`pos-test-nuevo`): la tinta de ambas ocupa exactamente las filas 176–199 (diferencia
+de centros: 0 px). Lección: al corregir un efecto óptico, medir TODAS las piezas de la composición.
+
+---
+
 ## 2026-10-05 — Actualización "al estilo Discord": se baja sola y se aplica cuando no estorba
 
 **Qué se hizo:** hasta hoy el actualizador aplicaba la versión en cuanto la descargaba (cada hora): paraba
