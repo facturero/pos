@@ -68,6 +68,7 @@ export async function pullFromAdmin(): Promise<PullCounts> {
   }
 
   if (succeeded === 0) {
+    await recordPullFailure(errors.join(" | "));
     throw new Error(`El pull falló en todas las fuentes: ${errors.join(" | ")}`);
   }
 
@@ -84,6 +85,23 @@ export async function pullFromAdmin(): Promise<PullCounts> {
   });
 
   return counts;
+}
+
+// Un pull que falla en todas las fuentes también queda en el registro: la barra de estado sale del ÚLTIMO
+// registro de pull, y sin esto se quedaba en el último SUCCESS ("Sincronizado" en verde) aunque la caja llevara
+// días sin poder hablar con el CRM (visto el 2026-10-05 con el token de emparejamiento vencido). Mientras siga
+// fallando se reutiliza la fila de error en vez de añadir una cada 5 min.
+async function recordPullFailure(detail: string): Promise<void> {
+  try {
+    const last = await prisma.syncLog.findFirst({ where: { direction: "PULL" }, orderBy: { createdAt: "desc" } });
+    if (last?.status === "ERROR") {
+      await prisma.syncLog.update({ where: { id: last.id }, data: { message: detail, createdAt: new Date() } });
+    } else {
+      await prisma.syncLog.create({ data: { direction: "PULL", status: "ERROR", itemCount: 0, message: detail } });
+    }
+  } catch (err) {
+    console.warn(`[sync] no se pudo registrar el fallo del pull: ${message(err)}`);
+  }
 }
 
 function message(err: unknown): string {

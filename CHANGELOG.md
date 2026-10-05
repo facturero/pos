@@ -24,6 +24,32 @@ de IVA en la caja y stock real (siguen abiertas de sesiones anteriores).
 
 ---
 
+## 2026-10-05 — Caja apagada / token de emparejamiento vencido: la pantalla ya no miente ni se queda vieja (0.3.10)
+
+**Prueba:** caja (VM) apagada de verdad, 9 cambios en el CRM (crear/editar/desactivar/borrar de productos, clientes, categoría,
+contacto, dirección), encendida a los 60 s: el backend hace un sync completo a los ~5 s de arrancar y a los 172 s del
+encendido (arranque de Ubuntu incluido) la base local tenía los 9 cambios. No depende de haber recibido los avisos.
+**Días apagada:** el refresh token del emparejamiento dura 30 días (`JWT_REFRESH_TTL=2592000`) y se renueva en cada uso, así
+que la ventana corre desde el último sync. Dentro de 30 días no pasa nada; pasados, el CRM responde 401 `INVALID_REFRESH_TOKEN`
+y la caja necesita un código nuevo (re-emparejar). No se pudo esperar 30 días reales: se simuló con un token inválido
+(respaldado en la VM y restaurado después). Con el token restaurado la caja se recuperó sola en el siguiente ciclo.
+
+**Dos fallos reales que salieron de ahí (corregidos):**
+1. Un pull que fallaba en todas las fuentes no dejaba rastro, y la barra de estado sale del ÚLTIMO registro de pull: seguía en
+   "Sincronizado" (verde) aunque la caja llevara tiempo sin poder hablar con el CRM. Ahora se registra una fila `ERROR`
+   (se reutiliza mientras siga fallando) y, si el CRM rechazó el token (400/401/403, marca `SESSION_EXPIRED`), la barra dice
+   "Sesión vencida: vuelve a emparejar la caja"; un corte de red dice "Sin conexión con el admin".
+2. La pantalla de venta pedía categorías y productos UNA vez al abrirse. Lo que el sync traía después estaba en la base pero no
+   en pantalla (ocho minutos después seguían saliendo productos ya borrados). Ahora cada pull exitoso nuevo (`sync.status` por
+   el socket local) recarga categorías y productos; si la categoría elegida desapareció, vuelve a "Todos".
+Verificado en pantalla de la VM: producto nuevo del CRM aparece solo, desactivado desaparece solo, token roto muestra el
+aviso, token restaurado vuelve a "Sincronizado".
+
+**Sin probar:** usuarios (alta, rol, deshabilitar, contraseña) — necesita una invitación por correo real; una venta con el token
+vencido (se queda pendiente y se sube al re-emparejar; no se hizo para no crear una factura en producción).
+
+---
+
 ## 2026-10-05 — Prueba completa CRM → caja (clientes, contactos, direcciones, categorías, productos) y lo que reveló (0.3.9)
 
 **Qué se probó** (CRM real vía API con la sesión del usuario, caja `pos-test-nuevo` con 0.3.8 real, base leída
@@ -54,7 +80,11 @@ directamente en la VM): crear / editar / desactivar / reactivar / borrar cada ti
 
 **Qué se arregló (api-gateway, `catalog-routing.ts`, hay que desplegar):** el hub ahora también avisa `catalog.changed`
 para `product.category.*` y `identity.user.*` (deshabilitado, rol, establecimientos). Antes un usuario deshabilitado en el
-CRM seguía pudiendo entrar a la caja hasta 5 min. **No cubierto a propósito:** `tax.tax_rate.upserted` no lleva
+CRM seguía pudiendo entrar a la caja hasta 5 min. **Verificado en producción** (gateway `47fa6c8` desplegado): crear, renombrar y borrar una categoría llegan a la caja por aviso
+(`product.category.created/updated/deleted`) en ~13-25 s en vez de esperar el ciclo de 5 min. No son los ~4 s de los productos:
+`update-category.ts` y `create-category.ts` añaden el evento al outbox fuera de la transacción del caso de uso (los de producto
+lo hacen dentro del `uow`), así que esperan al sondeo del relay (~25 s). Mejorable en product-service, no en la caja.
+**No cubierto a propósito:** `tax.tax_rate.upserted` no lleva
 `organizationId` (las tasas son por país), no hay sala a la que avisar; un cambio de tasa sigue entrando por el ciclo de 5 min.
 
 **Sin probar todavía:** alta de usuario (la invitación envía un correo real y el token solo llega por ese correo) y cambio

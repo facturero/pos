@@ -4,6 +4,7 @@ import { api, ApiError } from "../api/client";
 import { useCartStore, type Product } from "../stores/cart";
 import { usePreferencesStore } from "../stores/preferences";
 import { useThemeStore } from "../stores/theme";
+import { useSyncStore } from "../stores/sync";
 import ProductCard from "../components/ProductCard.vue";
 import CartPanel from "../components/CartPanel.vue";
 import Icon from "../components/Icon.vue";
@@ -23,6 +24,7 @@ interface CashSession {
 const cart = useCartStore();
 const preferences = usePreferencesStore();
 const theme = useThemeStore();
+const sync = useSyncStore();
 
 // Columnas del catálogo: "auto" es la cuadrícula responsiva de siempre; un número fija las columnas.
 const gridColumnsStyle = computed(() => {
@@ -165,6 +167,23 @@ onMounted(async () => {
   await loadCashSession();
   await Promise.all([loadCategories(), loadProducts()]);
 });
+
+// El catálogo se pide una vez al abrir la pantalla; sin esto, lo que el sync trae después (la caja se acaba de
+// encender, o el CRM cambió un precio) está en la base pero NO en la pantalla hasta recargar: visto el
+// 2026-10-05, ocho minutos después del sync seguían saliendo productos que ya no existían. Cada pull exitoso
+// nuevo (el backend empuja `sync.status` por el socket local) vuelve a pedir categorías y productos.
+watch(
+  () => (sync.lastPull?.status === "SUCCESS" ? sync.lastPull.id : null),
+  async (id, previous) => {
+    if (id === null || id === previous) return;
+    await loadCategories();
+    // Si la categoría elegida ya no existe en el CRM, volver a "Todos" en vez de dejar un filtro vacío.
+    if (selectedCategoryId.value && !categories.value.some((c) => c.id === selectedCategoryId.value)) {
+      selectedCategoryId.value = null;
+    }
+    await loadProducts();
+  },
+);
 </script>
 
 <template>

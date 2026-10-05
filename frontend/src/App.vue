@@ -63,6 +63,7 @@ watch(
 const syncLabel = computed(() => {
   if (sync.pendingSales > 0) return `${sync.pendingSales} venta(s) por sincronizar`;
   if (sync.isOnline) return "Sincronizado";
+  if (sync.sessionExpired) return "Sesión vencida: vuelve a emparejar la caja";
   return "Sin conexión con el admin";
 });
 

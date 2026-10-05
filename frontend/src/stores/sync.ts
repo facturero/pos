@@ -29,6 +29,10 @@ export const useSyncStore = defineStore("sync", {
   }),
   getters: {
     isOnline: (state) => state.lastPull?.status === "SUCCESS",
+    // El CRM rechazó el token de emparejamiento (caducó o lo revocaron): no es un corte de red y no se
+    // arregla solo, hay que volver a emparejar la caja con un código nuevo del CRM.
+    sessionExpired: (state) =>
+      state.lastPull?.status === "ERROR" && (state.lastPull.message ?? "").includes("SESSION_EXPIRED"),
   },
   actions: {
     async refresh() {

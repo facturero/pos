@@ -81,8 +81,12 @@ async function doRefresh(): Promise<void> {
     // No reintentamos con login: sin emparejamiento manual (o re-emparejar)
     // no hay forma de recuperar credenciales — el admin deberá desvincular
     // y regenerar el código desde el CRM, y volver a configurar este POS.
+    // 400/401/403 = el CRM rechazó el token (caducó tras 30 días sin usarse, o lo revocaron): no se arregla
+    // reintentando. La marca SESSION_EXPIRED la lee la pantalla para pedir un nuevo emparejamiento en vez de
+    // decir "sin conexión". Un 5xx o un corte de red NO llevan marca: esos sí se arreglan solos.
+    const rejected = res.status === 400 || res.status === 401 || res.status === 403;
     throw new AdminApiError(
-      `No se pudo renovar la sesión con el admin (${res.status}): ${body}. ` +
+      `${rejected ? "SESSION_EXPIRED: " : ""}No se pudo renovar la sesión con el admin (${res.status}): ${body}. ` +
         `Puede que el refresh token haya sido revocado — re-empareja el POS.`,
     );
   }
