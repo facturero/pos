@@ -3,15 +3,20 @@ import { PrismaClient } from "@prisma/client";
 export const prisma = new PrismaClient();
 
 // SQLite (un archivo local; ver DATABASE_URL). Ajustes que dependen del archivo/conexion y no del esquema:
-//  - WAL: las lecturas (pantalla, catalogo) no esperan a las escrituras (ventas, sincronizacion) y una
-//    caida de luz a mitad de escritura no corrompe el archivo. Es persistente: queda en el archivo.
-//  - synchronous=NORMAL: con WAL es seguro ante caidas del proceso; solo una caida de luz puede perder
-//    la ultima transaccion (no corromperla). Evita un fsync por cada venta.
-//  - busy_timeout: si otro proceso (el actualizador corre `prisma migrate deploy`) tiene el archivo
-//    bloqueado un instante, se espera en vez de fallar con "database is locked".
+//  - busy_timeout PRIMERO: si otro proceso tiene el archivo un instante (el actualizador corre
+//    `prisma migrate deploy`), las sentencias siguientes —incluido el cambio de journal_mode— esperan
+//    en vez de fallar con "database is locked".
+//  - journal_mode=DELETE (el de SQLite por defecto), NO WAL. Verificado el 2026-10-04: con la base en WAL,
+//    `prisma migrate deploy` falla SIEMPRE con "database is locked" mientras el backend este vivo (el
+//    schema-engine necesita acceso exclusivo a una base en WAL); con DELETE migra bien con el backend
+//    encendido. Eso dejaba a las cajas sin poder actualizarse. Perder WAL no cuesta concurrencia: con
+//    connection_limit=1 (pos.env) toda consulta pasa ya por UNA sola conexion. Es persistente: al
+//    arrancar convierte solo una base que viniera en WAL de versiones anteriores.
+//  - synchronous=FULL (el por defecto): con el diario de reversa, NORMAL puede corromper el archivo si
+//    se va la luz a mitad de una escritura; FULL no. Una venta de mostrador no necesita mas velocidad.
 // Se llama una vez al arrancar, antes de atender peticiones.
 export async function initDatabase(): Promise<void> {
-  await prisma.$queryRawUnsafe("PRAGMA journal_mode = WAL");
-  await prisma.$queryRawUnsafe("PRAGMA synchronous = NORMAL");
   await prisma.$queryRawUnsafe("PRAGMA busy_timeout = 10000");
+  await prisma.$queryRawUnsafe("PRAGMA journal_mode = DELETE");
+  await prisma.$queryRawUnsafe("PRAGMA synchronous = FULL");
 }

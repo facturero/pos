@@ -42,7 +42,7 @@ export function diagnoseDbError(err: unknown): DbIssue {
     };
   }
 
-  // Permisos: el usuario del servicio no puede escribir el archivo o su carpeta (WAL crea archivos junto a él)
+  // Permisos: el usuario del servicio no puede escribir el archivo o su carpeta (el diario de SQLite crea archivos junto a él)
   if (/readonly database/i.test(message) || /P1010/.test(message) || /permission denied/i.test(message) || /EACCES/.test(message)) {
     return {
       kind: "auth_failed",

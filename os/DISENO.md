@@ -45,7 +45,7 @@ todo se mueve junto y se puede volver atrás.
   kiosk.env                opciones del kiosco (binario, cursor oculto) — service técnico
   install-params.env       parámetros del primer arranque desatendido (se borra al terminar)
 /var/lib/facturero/        datos del POS (imágenes descargadas, etc.)
-/var/lib/facturero/pos.db  base SQLite (un archivo, modo WAL; la crea prisma migrate deploy)
+/var/lib/facturero/pos.db  base SQLite (un archivo, diario DELETE — no WAL, ver db.ts; la crea prisma migrate deploy)
 ```
 
 ## Lo que ya está hecho y probado (`os/`)
@@ -89,8 +89,9 @@ todo se mueve junto y se puede volver atrás.
   `EnvironmentFile` que necesita `prisma migrate deploy`). `migrateCmd` corre
   `prisma migrate deploy` desde `$RELEASE_DIR/backend`, **con el backend parado**: `stopCmd`
   (`sudo __RESTART_SCRIPT__ stop`) lo para justo antes, porque con el backend vivo la migración
-  falla siempre con `database is locked` (verificado 2026-10-04; los reintentos `migrateRetries`
-  no lo arreglan, solo cubren fallos de verdad transitorios). `restartCmd` (`sudo __RESTART_SCRIPT__` → `os/provision/restart-app.sh`)
+  falla siempre con `database is locked` si la base está en WAL (causa raíz verificada 2026-10-04; desde
+  la 0.3.5 el backend usa journal DELETE y el paquete trae un wrapper de `prisma`, ver CHANGELOG; los
+  reintentos `migrateRetries` no lo arreglan, solo cubren fallos de verdad transitorios). Antes de parar nada, `gateCmd` (`backend/update-gate.mjs`, dentro de la release) espera un buen momento para aplicar la versión (caja cerrada / pantalla ociosa / botón "Actualizar ahora" / tope de 3 días): la versión nueva se baja en segundo plano y se activa sin pillar a nadie a media venta; el mismo script lo ejecuta el wrapper de `prisma` para alcanzar a las cajas con actualizador viejo (ver CHANGELOG 2026-10-05). `restartCmd` (`sudo __RESTART_SCRIPT__` → `os/provision/restart-app.sh`)
   reinicia el backend (tolera el primer arranque, `systemctl start` como rama del `||`) **y además
   mata la ventana del kiosco** (`pkill -f facturero-pos-app`; `launch.sh` la relanza sola) — sin
   esto la ventana se quedaba con los nombres de archivo `.js` con hash de la build anterior y

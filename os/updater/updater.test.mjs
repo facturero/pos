@@ -259,6 +259,42 @@ test("si stopCmd falla: se aborta sin marcar la versión como mala y se intenta 
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, "state.json"), "utf8")).bad.includes("1.1.0"), false);
 });
 
+test("gateCmd corre antes que stopCmd y migrateCmd, y bloquea hasta que termina", async () => {
+  healthOk = true;
+  publish("1.0.0");
+  const root = newRoot();
+  await update(cfg(root));
+  publish("1.1.0");
+  const marks = path.join(root, "marks.txt");
+  const lento = `node -e "setTimeout(()=>require('fs').appendFileSync(process.argv[1],'gate\\n'),150)" "${marks}"`;
+  const r = await update(cfg(root, {
+    gateCmd: lento, stopCmd: mark(marks, "stop"), migrateCmd: mark(marks, "migrate"), restartCmd: mark(marks, "restart"),
+  }));
+  assert.equal(r.updated, true);
+  assert.equal(fs.readFileSync(marks, "utf8"), "gate\nstop\nmigrate\nrestart\n");
+});
+
+test("gateCmd no corre en la instalación inicial", async () => {
+  healthOk = true;
+  publish("1.0.0");
+  const root = newRoot();
+  const marks = path.join(root, "marks.txt");
+  fs.mkdirSync(root, { recursive: true });
+  await update(cfg(root, { gateCmd: mark(marks, "gate") }));
+  assert.equal(fs.existsSync(marks), false);
+});
+
+test("si gateCmd falla, la actualización sigue adelante (la compuerta nunca bloquea)", async () => {
+  healthOk = true;
+  publish("1.0.0");
+  const root = newRoot();
+  await update(cfg(root));
+  publish("1.1.0");
+  const r = await update(cfg(root, { gateCmd: `node -e "process.exit(1)"` }));
+  assert.equal(r.updated, true);
+  assert.equal(current(root), "1.1.0");
+});
+
 test("conserva solo las últimas versiones (keepReleases) sin borrar current ni previous", async () => {
   healthOk = true;
   const root = newRoot();

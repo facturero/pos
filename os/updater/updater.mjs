@@ -125,18 +125,22 @@ function prune(root, keep, protect) {
 // --- flujo principal -------------------------------------------------------
 
 /**
- * config: { root, manifestUrl, publicKey (PEM), stopCmd?, migrateCmd?, restartCmd?, healthUrl?,
+ * config: { root, manifestUrl, publicKey (PEM), gateCmd?, stopCmd?, migrateCmd?, restartCmd?, healthUrl?,
  *           healthTimeoutMs?=60000, keepReleases?=3, migrateRetries?=0, migrateRetryDelayMs?=3000, log? }
  * Los comandos se ejecutan con cwd = la versión nueva y RELEASE_DIR / RELEASE_VERSION en el entorno
  * (stopCmd, y el restartCmd de recuperación, con los de la versión que estaba corriendo).
  *
+ * gateCmd (opcional): comando que BLOQUEA hasta que sea buen momento para aplicar (ver
+ * os/release/update-gate.mjs, que viaja dentro de la release). Va antes de stopCmd y solo si ya hay
+ * una versión corriendo; si falla, se aplica igualmente.
+ *
  * stopCmd (opcional): para la versión en curso justo antes de migrar; restartCmd la vuelve a
- * levantar (con la nueva, o con la anterior si la migración falla). Verificado el 2026-10-04 en la
- * VM de pruebas: con el backend ENCENDIDO, `prisma migrate deploy` falla SIEMPRE con "database is
- * locked" (también sin migraciones pendientes), no a ratos; con el backend parado pasa. Python
- * escribe en esa misma base sin problema, así que no es un bloqueo de SQLite sino de cómo el
- * schema-engine de Prisma convive con otra conexión abierta (el backend de la pantalla). Costo:
- * unos segundos sin servicio durante cada actualización.
+ * levantar (con la nueva, o con la anterior si la migración falla). Causa raíz verificada el
+ * 2026-10-04: con la base en modo WAL, el schema-engine de Prisma necesita acceso exclusivo, así que
+ * `prisma migrate deploy` falla SIEMPRE con "database is locked" mientras el backend esté vivo. Desde
+ * la 0.3.5 el backend usa journal DELETE y el paquete trae un wrapper de `prisma` que resuelve el
+ * primer salto, por lo que las cajas con un actualizador viejo ya NO dependen de esto; stopCmd queda
+ * como cinturón y tirantes para instalaciones nuevas. Costo: unos segundos sin servicio al actualizar.
  *
  * migrateRetries (por defecto 0, no cambia el comportamiento de siempre): reintentos de la
  * migración antes de darla por mala. Se agregó el 2026-09-29 creyendo que el "database is locked"
@@ -181,6 +185,19 @@ export async function update(config) {
 
     const env = { ...process.env, RELEASE_DIR: releaseDir, RELEASE_VERSION: m.version };
     const currentEnv = { ...process.env, RELEASE_DIR: path.join(root, "releases", String(current)), RELEASE_VERSION: String(current) };
+
+    // Compuerta: con la versión nueva ya descargada y descomprimida, se espera a un buen momento (caja
+    // cerrada / pantalla ociosa) antes de tocar nada, para no pillar a nadie a media venta. La versión
+    // vieja sigue sirviendo mientras tanto. Es un extra: si falla, se aplica igualmente (que la compuerta
+    // se rompa no debe dejar la caja sin poder actualizarse). Solo si ya había algo corriendo.
+    if (config.gateCmd && current) {
+      log("esperando un buen momento para aplicar…");
+      try {
+        await run(config.gateCmd, { cwd: releaseDir, env });
+      } catch (err) {
+        log(`la compuerta falló (${err.message}); se aplica igualmente`);
+      }
+    }
 
     // Se para la versión que está corriendo ANTES de migrar (solo si ya había una: en la
     // instalación inicial no hay nada corriendo que parar). Si el parado falla no sabemos en qué

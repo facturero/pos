@@ -6,6 +6,7 @@ import { useThemeStore } from "../stores/theme";
 import Icon from "./Icon.vue";
 import WifiPanel from "./WifiPanel.vue";
 import SyncPanel from "./SyncPanel.vue";
+import { useUpdates } from "../composables/useUpdates";
 
 // Barra de estado inferior, como el "system bar" de Material: versión instalada, por dónde sale el equipo a la
 // red (cable / Wi-Fi / sin red) y la hora. La versión y la red las lee el backend local (/system/info: el
@@ -18,6 +19,8 @@ interface SystemInfo {
 }
 
 const theme = useThemeStore();
+const updates = useUpdates();
+const confirmUpdate = ref(false);
 
 const NETWORK_REFRESH_MS = 10_000;
 const info = ref<SystemInfo | null>(null);
@@ -25,9 +28,20 @@ const now = ref(new Date());
 let netTimer: ReturnType<typeof setInterval> | null = null;
 let clockTimer: ReturnType<typeof setInterval> | null = null;
 
+// Versión con la que se cargó ESTA pantalla. Si más tarde el backend responde otra (se aplicó una
+// actualización), esta pantalla quedó con el index.html y los archivos con hash de la versión anterior:
+// se recarga para traer los nuevos. Es la forma de que la ventana se ponga al día aunque el actualizador
+// de la caja no la reinicie (los instalados con ISO viejas solo reinician el backend).
+let bootVersion: string | null = null;
+
 async function refreshInfo(): Promise<void> {
   try {
     info.value = await api.get<SystemInfo>("/system/info");
+    const v = info.value.version;
+    if (v) {
+      if (bootVersion === null) bootVersion = v;
+      else if (v !== bootVersion) window.location.reload();
+    }
   } catch {
     // el servicio local no responde: la barra conserva lo último que supo
   }
@@ -119,6 +133,15 @@ function toggleSync(): void {
     <SyncPanel v-if="showSync" :below="theme.layout.statusBarPosition === 'top'" @close="showSync = false" />
 
     <span>{{ versionLabel }}</span>
+    <div v-if="updates.pending.value" class="flex items-center gap-2 text-ink font-medium">
+      <template v-if="updates.pending.value.state === 'applying'">
+        <span>Actualizando a v{{ updates.pending.value.version }}…</span>
+      </template>
+      <template v-else>
+        <span>Actualización v{{ updates.pending.value.version }} lista · se aplicará sola al cerrar caja o sin actividad</span>
+        <button type="button" class="underline hover:text-ink" @click="confirmUpdate = true">Actualizar ahora</button>
+      </template>
+    </div>
     <div class="flex items-center gap-4">
       <span v-if="powerError" class="text-danger">{{ powerError }}</span>
       <button
@@ -171,6 +194,36 @@ function toggleSync(): void {
       >
         <Icon :path="mdiPower" :size="14" />
       </button>
+    </div>
+
+    <div
+      v-if="confirmUpdate"
+      class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 text-sm text-ink/90"
+      @click.self="confirmUpdate = false"
+    >
+      <div class="bg-surface rounded-xl p-6 w-full max-w-sm text-center">
+        <h2 class="text-ink text-base mb-1">¿Actualizar ahora?</h2>
+        <p class="text-muted mb-5">
+          La pantalla se reiniciará unos segundos. Lo que tengas en el carrito se perderá.
+        </p>
+        <div class="flex gap-2">
+          <button
+            type="button"
+            class="flex-1 py-2 rounded-lg border border-line-strong text-ink/90 hover:bg-page"
+            @click="confirmUpdate = false"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            class="flex-1 py-2 rounded-lg font-medium bg-primary hover:bg-primary-hover text-primary-on disabled:opacity-40"
+            :disabled="updates.requesting.value"
+            @click="updates.updateNow().finally(() => (confirmUpdate = false))"
+          >
+            Actualizar
+          </button>
+        </div>
+      </div>
     </div>
 
     <div

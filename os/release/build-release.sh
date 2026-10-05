@@ -6,7 +6,10 @@
 #   os/release/build-release.sh --version X.Y.Z --out <carpeta> \
 #       [--key <release-private.pem>] \
 #       [--url-base https://github.com/facturero/pos/releases/download/vX.Y.Z] \
-#       [--smoke] [--stage <carpeta>]
+#       [--smoke] [--stage <carpeta>] [--urgent]
+#
+# --urgent: la caja no espera a un buen momento (caja cerrada / pantalla ociosa) más de 15 minutos para
+# aplicar esta versión (por defecto espera hasta 3 días; ver os/release/update-gate.mjs).
 #
 # Sin --key solo arma el stage (idóneo para probar sin la clave privada, que
 # no viaja en el repo). --smoke arranca el backend del stage dentro de un
@@ -34,6 +37,7 @@ KEY=""
 URL_BASE=""
 SMOKE=""
 STAGE=""
+URGENT=""
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -43,6 +47,7 @@ while [ "$#" -gt 0 ]; do
     --url-base) URL_BASE="$2"; shift 2 ;;
     --stage) STAGE="$2"; shift 2 ;;
     --smoke) SMOKE=1; shift ;;
+    --urgent) URGENT=1; shift ;;
     *) echo "argumento desconocido: $1" >&2; exit 2 ;;
   esac
 done
@@ -119,6 +124,14 @@ cp -r /build/backend/dist /stage/backend/dist
 cp /build/backend/package.json /build/backend/package-lock.json /stage/backend/
 cp -r /build/backend/node_modules /stage/backend/node_modules
 cp -r /workspace/backend/prisma /stage/backend/prisma
+# node_modules/.bin/prisma pasa a ser un wrapper (os/release/prisma-wrapper.sh) para que las cajas con el
+# actualizador viejo puedan migrar aunque el backend siga vivo; ver el comentario de ese archivo. Va DESPUES
+# de todo `npm`/`prisma generate` (no deben tocarlo) y ANTES de empaquetar y del smoke test, que lo ejercita.
+rm -f /stage/backend/node_modules/.bin/prisma
+install -m 0755 /workspace/os/release/prisma-wrapper.sh /stage/backend/node_modules/.bin/prisma
+# Compuerta de actualización: la usan el wrapper de arriba y el actualizador nuevo (gateCmd).
+install -m 0644 /workspace/os/release/update-gate.mjs /stage/backend/update-gate.mjs
+if [ -n "${URGENT:-}" ]; then echo '{"maxWaitMinutes":15}' > /stage/update-policy.json; fi
 cp -r /build/frontend/dist /stage/frontend/dist
 # /health lee VERSION relativo a dist; sign-release lo escribe también en la raíz del stage
 echo "$BUILD_VERSION" > /stage/VERSION
@@ -145,6 +158,7 @@ docker run --rm --name "pos-build-${TAG}" \
   -v "${PKGDIR_HOST}:/pkg" \
   -v "${TMPD_HOST}:/inner:ro" \
   -e BUILD_VERSION="$VERSION" \
+  -e URGENT="$URGENT" \
   node:22-bookworm-slim bash /inner/inner.sh
 
 if [ -n "$KEY" ]; then

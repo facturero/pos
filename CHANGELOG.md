@@ -24,43 +24,107 @@ de IVA en la caja y stock real (siguen abiertas de sesiones anteriores).
 
 ---
 
-## 2026-10-04 — Los reintentos de migración NO arreglaban nada; ahora el actualizador para el backend antes de migrar
+## 2026-10-05 — Actualización "al estilo Discord": se baja sola y se aplica cuando no estorba
 
-**Qué se hizo:** al probar la actualización 0.3.3 → 0.3.4 en la VM `pos-test-ssh1` (que ya tenía los
-reintentos de 2026-09-29) falló: 6 intentos en ~80 s, todos `database is locked`. Experimento
-aislado: con el backend ENCENDIDO, `prisma migrate deploy` falla siempre (incluso sin migraciones
-pendientes); con el backend PARADO pasa. Un `BEGIN IMMEDIATE` y un `CREATE TABLE` desde Python sobre
-esa misma base, con el backend encendido, funcionan — o sea que no es un bloqueo de SQLite sino de
-cómo el schema-engine de Prisma convive con otra conexión abierta. Causa raíz de fondo, sin
-resolver: no sabemos QUÉ hace el schema-engine para chocar (la base está en WAL); lo que sí está
-probado es la condición (backend vivo) y el arreglo (backend parado).
+**Qué se hizo:** hasta hoy el actualizador aplicaba la versión en cuanto la descargaba (cada hora): paraba
+el backend y reiniciaba la ventana aunque hubiera una venta a medias — el cajero podía perder el carrito.
+Ahora la versión se baja y se prepara en segundo plano, y se activa en un buen momento. Política
+acordada con el dueño: **se aplica al cerrar caja, o con el carrito vacío y 5 min sin tocar nada, o si no
+hay pantalla conectada; el usuario puede adelantarla con "Actualizar ahora"; si no llega un buen
+momento, se fuerza a los 3 días** (`build-release.sh --urgent` lo baja a 15 min para una versión crítica).
 
-**Arreglo:** `updater.mjs` acepta `stopCmd`; si hay una versión en curso, la para justo antes de
-migrar. `restartCmd` la levanta después (con la nueva) o, si la migración falla, con la anterior
-(sin esto la caja se quedaba sin servicio). Si `stopCmd` falla, se aborta SIN marcar la versión como
-mala (no es culpa suya). `restart-app.sh` gana un argumento `stop`; el sudoers no cambia (permite el
-script exacto con cualquier argumento). En la instalación inicial no se ejecuta. 4 tests nuevos
-(16 en total, en verde). Costo: unos segundos sin servicio en cada actualización.
-
-**Verificado en la VM** con el ciclo real (`systemctl start facturero-updater`): 0.3.3 → 0.3.4 en 9 s,
-`exit=0`, "parando… → migraciones… → listo", `/health` en 0.3.4, ventana relanzada. Los 2 únicos 404
-de assets son de la ventana VIEJA pidiendo sus hashes antes de que la matara el script; la nueva
-cargó todo con 200 y después hubo 0.
+Piezas:
+- `os/release/update-gate.mjs` (viaja DENTRO de la release, `backend/update-gate.mjs`): la "compuerta".
+  Bloquea hasta que sea buen momento. Pregunta a `GET /system/update-gate` del backend en marcha; deja
+  su estado en `update-gate.json` (para que la pantalla lo muestre) y atiende el archivo `update-now`.
+  Si el backend que corre es ≤ 0.3.4 (sin ese endpoint) mira la base directamente (caja abierta = espera).
+  **Regla de oro: un fallo suyo NUNCA bloquea una actualización** (cualquier error = se aplica).
+- La llaman dos caminos, y el segundo sale al instante por una marca de 10 min: el actualizador nuevo
+  (`gateCmd` en `updater.mjs`, antes de parar el backend) y el wrapper de `prisma`
+  (`prisma-wrapper.sh`, antes de `migrate deploy`). **El segundo es el que alcanza a las cajas ya
+  instaladas**: su actualizador viejo no puede cambiar sin ISO, pero ejecuta el `prisma` de la
+  versión nueva — que ahora espera la compuerta antes de tocar nada. La versión vieja sigue sirviendo
+  mientras tanto. Ojo: el actualizador viejo mantiene su `updater.lock` durante la espera (los avisos
+  "otra actualización está en curso" de las corridas siguientes salen con código 3, que la unidad ya
+  trata como éxito).
+- `backend/src/system/update.ts` + rutas `/system/update-status`, `/update-gate`, `/activity`,
+  `/update-now`: el backend ve la caja abierta y el latido de la pantalla (carrito + tiempo ocioso).
+- `frontend/src/composables/useUpdates.ts` + `StatusBar.vue`: latido cada 10 s, aviso "Actualización
+  vX lista · se aplicará sola al cerrar caja o sin actividad" con botón "Actualizar ahora" (confirma
+  que se pierde el carrito), y recarga automática si la versión del backend cambia (así la ventana se
+  pone al día aunque el actualizador de la caja no la reinicie).
 
 **Qué queda como consecuencia:**
-- `updater.mjs`, `updater.json` y `restart-app.sh` son capa del sistema operativo: **las cajas ya
-  instaladas siguen con el actualizador viejo y NO pueden actualizarse** hasta recibir esto. Una
-  release de la app no lo arregla. Las ISO nuevas ya lo traen (`install.sh`); para las ya
-  instaladas con SSH habilitado: `os/provision/patch-box.sh <usuario@host> [-p puerto] [-i clave]`
-  (corre `patch-updater.sh` en la caja). Idempotente, con respaldo en
-  `/var/backups/facturero-patch/<fecha>/` y restauración automática si algo falla; valida el sudoers
-  con `visudo` antes de instalarlo y no reinicia nada. También libera de `state.bad` las versiones
-  más nuevas que la instalada (el actualizador viejo las marcaba malas por este mismo bloqueo, no
-  por culpa de ellas). Probado en la VM: caja degradada a 0.3.3 con todo lo viejo → se atasca con
-  `database is locked` y 0.3.4 "ya falló aquí" → `patch-box.sh` → el actualizador sube a 0.3.4 solo.
-  Las cajas SIN SSH habilitado solo se arreglan con ISO nueva o acceso físico.
+- El primer salto desde una caja con backend ≤ 0.3.4 solo sabe de "caja abierta/cerrada" (la base no
+  guarda el carrito ni la actividad); desde la siguiente versión ya hay carrito y ocio.
+- La app de escritorio (Windows) NO usa esto: se actualizará con `electron-updater`; en modo desktop no
+  hay directorio de estado y los endpoints devuelven "sin actualización pendiente".
+- Si se usa `--urgent`, la caja espera como mucho 15 min a un buen momento.
+
+---
+
+## 2026-10-04/05 — Las cajas no podían actualizarse: causa raíz (WAL) y arreglo que viaja DENTRO de la app
+
+**Qué se hizo:** al probar la actualización 0.3.3 → 0.3.4 en la VM `pos-test-ssh1` falló con `database
+is locked`: 6 intentos en ~80 s, todos fallidos, aunque la VM ya tenía los reintentos de 2026-09-29
+(que por tanto NO arreglaban nada: el diagnóstico "choque momentáneo" era erróneo).
+
+**Causa raíz (verificada con experimentos sobre copias de la base):** el backend pone la base en modo
+**WAL** al arrancar (`db.ts`) y el `schema-engine` de Prisma, con la base en WAL, necesita acceso
+exclusivo. Con otra conexión abierta (el backend de la pantalla) falla SIEMPRE, incluso sin
+migraciones pendientes:
+
+| Caso | `prisma migrate deploy` |
+|---|---|
+| base en WAL + otra conexión abierta | `database is locked` |
+| base en modo DELETE + otra conexión abierta | migra bien |
+| base en WAL sin otra conexión | migra bien |
+
+Python escribe en esa misma base sin problema: no es un bloqueo de SQLite, es del schema-engine.
+
+**Restricción de diseño del dueño:** el producto es multi-organización; no se puede ir caja por caja
+con SSH. El arreglo tiene que llegar con la propia actualización de la app. El problema: el
+actualizador, su `updater.json` y el sudoers son capa del sistema operativo y NO se actualizan con la
+app. Lo único de la release que el actualizador viejo ejecuta es `./node_modules/.bin/prisma migrate
+deploy` desde la versión nueva — y ESO sí viaja en el paquete.
+
+**Arreglo integrado en la app (llega a las cajas ya instaladas, sin SSH ni ISO):**
+1. `backend/src/db.ts`: journal_mode **DELETE** (no WAL) + `synchronous=FULL` + `busy_timeout` primero.
+   Con `connection_limit=1` toda consulta pasa por una sola conexión, así que WAL no aportaba
+   concurrencia. Al arrancar convierte solo una base que viniera en WAL. A partir de ahí `migrate
+   deploy` funciona con el backend vivo. Costo: `FULL` es algo más lento por escritura (irrelevante
+   para un mostrador) y a cambio no hay riesgo de corrupción por corte de luz.
+2. `os/release/prisma-wrapper.sh`, instalado por `build-release.sh` como `node_modules/.bin/prisma`
+   del paquete. Para el primer salto, desde un backend viejo todavía en WAL: si `migrate deploy`
+   falla con `database is locked`, detiene el backend de esa instalación (mismo usuario, sin sudo) y
+   un vigilante lo mantiene muerto mientras dura el intento — matarlo una sola vez NO bastaba:
+   systemd lo relanza a los 3 s y le ganaba la carrera al schema-engine (probado: 6 intentos, 6
+   fallos). Solo mata procesos del mismo usuario, con cwd bajo `/opt/facturero` y `dist/index.js` en
+   su línea de comando.
+3. `frontend/src/main.ts`: al fallar la carga de un chunk (`vite:preloadError`) la pantalla se
+   recarga (con enfriamiento de 30 s). Cubre a las cajas cuyo actualizador viejo no reinicia la
+   ventana: sin esto pedía assets con hash viejo → 404 (visto el 2026-09-30).
+
+**Mejoras de capa de SO para ISOs NUEVAS** (no llegan a las ya instaladas; las nuevas no las
+necesitan para actualizar gracias a lo de arriba, pero son más limpias): `updater.mjs` acepta
+`stopCmd` (para el backend antes de migrar y lo devuelve al aire si la migración falla; si el parado
+falla no marca la versión como mala), `restart-app.sh` gana el argumento `stop` y también reinicia la
+ventana del kiosco, `updater.json` trae `stopCmd`. 16 tests del actualizador en verde.
+
+**Verificado en la VM** dejándola como la peor caja posible — actualizador viejo, sin `stopCmd`, sin
+`restart-app.sh`, sin permiso de sudo para parar el backend, base en WAL — y lanzando el actualizador
+real contra una 0.3.5 con estos cambios: 0.3.4 → 0.3.5 en **19 s, `exit=0`**, "migraciones… →
+`database is locked` → [prisma] detengo el backend → `No pending migrations` → listo", `/health` en
+0.3.5, base en modo `delete`, 0 errores 404 de assets.
+
+**Qué queda como consecuencia:**
+- **Ninguna caja ya instalada necesita intervención manual**: reciben esto como cualquier release.
+  Si una caja estaba marcada con `0.3.4` mala por este bloqueo, se recupera con la siguiente versión
+  (`0.3.5` no está en su lista).
+- Las cajas instaladas seguirán sin `stopCmd`/`restart-app.sh` hasta una ISO nueva; no es urgente.
 - Los tags `v0.3.1`–`v0.3.3` apuntan a `44d498c`, que no tiene los arreglos con los que se armaron
   esas releases; los paquetes publicados son correctos. `v0.3.4` sí apunta al commit bueno.
+- Se evaluó y descartó un parche por SSH (`patch-box.sh`): no escala a un producto multi-organización.
 
 ---
 
@@ -150,8 +214,7 @@ actualización de la app desde 0.2.6, y llevaba ahí desde antes de esta sesión
    nuevas en `updater.test.mjs` (12 casos en total, todos en verde).
    **CORRECCIÓN 2026-10-04: este arreglo NO resuelve el problema.** El diagnóstico "choque
    momentáneo" era erróneo. Ver la entrada de 2026-10-04 arriba: con el backend encendido el
-   bloqueo es permanente y los reintentos no sirven; lo que lo arregla es parar el backend antes
-   de migrar (`stopCmd`).
+   bloqueo es permanente (la base está en WAL) y los reintentos no sirven; ver ahí la causa raíz y el arreglo.
 
 **Un tercer hallazgo, de entorno, no de código:** en esa misma VM, `facturero-updater.timer`
 (solo `OnBootSec`, sin `OnCalendar`) nunca calculaba su próxima corrida — pero le pasaba

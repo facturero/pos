@@ -80,7 +80,7 @@ if (frontendDist) {
   });
 }
 
-// Ajustes de SQLite (WAL, busy_timeout) antes de atender nada. Si la base no abre, se dice QUE hacer.
+// Ajustes de SQLite (busy_timeout, journal_mode, synchronous) antes de atender nada. Si la base no abre, se dice QUE hacer.
 try {
   await initDatabase();
 } catch (err) {
