@@ -24,6 +24,44 @@ de IVA en la caja y stock real (siguen abiertas de sesiones anteriores).
 
 ---
 
+## 2026-10-05 — Usuarios CRM → caja: invitar, rol, deshabilitar, login, sin internet, reinicio (0.3.11)
+
+**Prueba** (6 usuarios `pos.*@prueba.test` invitados por la API del CRM, correos en Mailtrap sandbox, contraseñas puestas a mano por el
+dueño en los formularios de "Aceptar invitación"; inicio de sesión en la caja de la VM con esa contraseña de prueba):
+| Cambio en el CRM | En la caja | Tiempo |
+|---|---|---|
+| Invitar usuario | llega (`identity.user.invited`), sin hash | ~4 s |
+| Aceptar la invitación (poner contraseña) | llega el hash `argon2id`, login local OK | segundos |
+| Asignar establecimiento | llega | ~4 s |
+| Dar rol Administrador | pasa a ADMIN | ~1 s |
+| Deshabilitar / habilitar | `active` 0/1, y el login se cierra/abre | ~1-2 s |
+| Quitar del establecimiento | `active` 0 (lógica 0.3.9) | ~3 s |
+Login con hash local OK; **sin internet** (CRM inalcanzable) sigue entrando quien ya tiene hash, y quien no lo tiene recibe
+"Sin conexión con el CRM…". Tras **reiniciar la VM** los accesos se conservan. El login es por el CÓDIGO de 7 caracteres, no por correo.
+
+**Fallo corregido (caja):** el middleware de auth solo verificaba la firma del JWT (12 h) y el rol del token. Un usuario deshabilitado
+en el CRM **con la sesión ya abierta seguía trabajando** (`/products`, `/customers`, `/cash-sessions` → 200). Ahora cada petición
+consulta al usuario en la base: desactivado o borrado → 401 "Tu usuario fue desactivado…", y el rol sale de la base, no del token.
+
+**Contraseña restablecida: tres capas, como productos y clientes.** Medido: tras restablecer la contraseña en el CRM, la caja
+seguía aceptando la vieja y rechazando la nueva hasta el ciclo programado (~2 min, máx. 5): el evento `identity.user.password_reset_completed`
+no llevaba organización y el gateway no sabía a qué cajas avisar. Ahora (1) **tiempo real:** `auth-service` añade `organizationIds` (las
+membresías activas del usuario) a `password_reset_completed` y a `profile_completed`, y el gateway (`catalog-routing.ts`,
+`catalogRoutingOrgs`) los reenvía como `catalog.changed` a cada organización; (2) **respaldo:** el cron de la caja cada 5 min;
+(3) **arranque:** sync completo a los ~5 s de iniciar el backend. La caja no cambió: no necesita release.
+**Verificado en producción** (gateway `8ee0798`, auth `35305a7`): restablecer la contraseña de `pos.admin2` llegó a la caja por
+`identity.user.password_reset_completed` → `catalog.changed` en ~3 s (el hash cambió y de las tres contraseñas probadas solo la nueva entró;
+antes tardaba hasta el ciclo de 5 min y la vieja seguía valiendo).
+
+**Hallazgos SIN corregir (decisión pendiente):**
+- Rol "Solo lectura" y "Supervisor" del CRM se mapean a CASHIER en la caja (`pull.ts`: solo `Administrador` → ADMIN). Un usuario de solo
+  lectura puede abrir/cerrar caja y, como `POST /sales` solo exige sesión, cobrar. No se hizo una venta real para no generar factura.
+- `auth-service`: el controlador de `POST /users/invite` descarta `establishmentIds` (el caso de uso y el validador sí lo soportan): un
+  invitado no queda en ningún establecimiento y no aparece en ninguna caja (los Administradores sí, se incluyen siempre).
+- `auth-service`: no hay endpoint para QUITAR un rol (solo `POST /users/:id/roles`, que suma), y asignar un rol repetido da 500.
+
+---
+
 ## 2026-10-05 — Caja apagada / token de emparejamiento vencido: la pantalla ya no miente ni se queda vieja (0.3.10)
 
 **Prueba:** caja (VM) apagada de verdad, 9 cambios en el CRM (crear/editar/desactivar/borrar de productos, clientes, categoría,

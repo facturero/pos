@@ -1,5 +1,6 @@
 import type { Context, Next } from "hono";
 import { verifyToken } from "../utils/jwt.js";
+import { prisma } from "../db.js";
 
 // Autenticación local del POS (cajero vs administrador). El backend solo
 // escucha en 127.0.0.1, así que esto protege el uso multi-usuario en el
@@ -13,11 +14,19 @@ export async function authMiddleware(c: Context, next: Next) {
   const token = header.slice("Bearer ".length);
   try {
     const payload = verifyToken(token);
-    c.set("user", payload);
-    await next();
+    // La firma sola no basta: el token dura 12 h y lleva el rol de cuando se inició sesión. Se mira al usuario
+    // EN LA BASE en cada petición para que deshabilitarlo en el CRM, o cambiarle el rol, surta efecto en la sesión
+    // que ya tiene abierta y no solo en el siguiente login (visto el 2026-10-05: un cajero deshabilitado seguía
+    // cobrando con su sesión). Una consulta por clave primaria en SQLite local cuesta microsegundos.
+    const current = await prisma.user.findUnique({ where: { id: payload.sub }, select: { active: true, role: true } });
+    if (!current || !current.active) {
+      return c.json({ error: "Tu usuario fue desactivado. Inicia sesión de nuevo o consulta al administrador." }, 401);
+    }
+    c.set("user", { ...payload, role: current.role });
   } catch {
     return c.json({ error: "Token inválido o expirado" }, 401);
   }
+  await next();
 }
 
 export async function requireAdmin(c: Context, next: Next) {
