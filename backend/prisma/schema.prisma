@@ -84,6 +84,7 @@ model User {
   email        String? // email del CRM (para validar contraseña); null en usuarios locales
   passwordHash String? // null = sin contraseña vinculada aún
   role         Role     @default(CASHIER)
+  permissions  String? // JSON con los permisos del CRM (union de sus roles): ["invoice:create", ...]. null = no se sabe
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
 

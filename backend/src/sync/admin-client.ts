@@ -344,6 +344,8 @@ export interface RemoteUser {
   // validar el login LOCALMENTE (offline). null = el usuario no tiene
   // contraseña en el CRM (p.ej. solo Google o invitación sin aceptar).
   passwordHash: string | null;
+  // Permisos efectivos del usuario (unión de los de sus roles). Un auth-service anterior no lo manda.
+  permissions?: string[];
 }
 
 // customer-service devuelve el read-model plano; contactos/direcciones vienen
@@ -398,6 +400,29 @@ export async function fetchRemoteUsers(establishmentId?: string): Promise<Remote
     ? `?establishmentId=${encodeURIComponent(establishmentId)}`
     : '';
   return request<RemoteUser[]>(`/users${params}`);
+}
+
+// Roles de la organización con sus permisos (auth-service: GET /roles, mismo permiso `user:read` que /users).
+// Cada permiso puede venir como texto ("invoice:create") o como objeto con `code`; se normaliza a texto.
+export interface RemoteRole {
+  name: string;
+  permissions: string[];
+}
+
+export async function fetchRemoteRoles(): Promise<RemoteRole[]> {
+  const raw = await request<{ name: string; permissions?: (string | { code?: string })[] }[]>(`/roles`);
+  return raw.map((r) => ({
+    name: r.name,
+    permissions: (r.permissions ?? [])
+      .map((p) => (typeof p === "string" ? p : (p.code ?? "")))
+      .filter((p) => p.length > 0),
+  }));
+}
+
+// Códigos del catálogo de permisos del CRM (GET /permissions). Sirve para saber si el CRM ya conoce `pos:access`.
+export async function fetchRemotePermissionCodes(): Promise<string[]> {
+  const raw = await request<{ code: string }[]>(`/permissions`);
+  return raw.map((p) => p.code);
 }
 
 export async function fetchRemoteCustomers(): Promise<RemoteCustomer[]> {

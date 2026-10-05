@@ -1,10 +1,11 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import bcrypt from "bcryptjs";
 import argon2 from "argon2";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { signToken } from "../utils/jwt.js";
 import { validateRemoteCredentials } from "../sync/admin-client.js";
+import { hasPosAccess } from "../sync/permissions.js";
 
 export const authRoutes = new Hono();
 
@@ -33,6 +34,12 @@ async function verifyPassword(password: string, hash: string): Promise<boolean> 
   return bcrypt.compare(password, hash);
 }
 
+// La contraseña era correcta pero el usuario no tiene el permiso `pos:access` del CRM: se dice claro, no como un
+// error de contraseña (el administrador lo arregla dándole el permiso a su rol).
+function noPosAccess(c: Context) {
+  return c.json({ error: "Tu usuario no tiene acceso al POS. Pide al administrador el permiso «pos:access»." }, 403);
+}
+
 authRoutes.post("/login", async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = loginSchema.safeParse(body);
@@ -52,6 +59,7 @@ authRoutes.post("/login", async (c) => {
     if (!valid) {
       return c.json({ error: "Contraseña incorrecta" }, 401);
     }
+    if (!hasPosAccess(user.permissions)) return noPosAccess(c);
     return c.json({
       token: signToken({ sub: user.id, username: user.username, role: user.role }),
       passwordLinked: false,
@@ -81,6 +89,7 @@ authRoutes.post("/login", async (c) => {
 
   const hash = await argon2.hash(password);
   await prisma.user.update({ where: { id: user.id }, data: { passwordHash: hash } });
+  if (!hasPosAccess(user.permissions)) return noPosAccess(c);
 
   const token = signToken({ sub: user.id, username: user.username, role: user.role });
 

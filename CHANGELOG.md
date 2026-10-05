@@ -24,6 +24,34 @@ de IVA en la caja y stock real (siguen abiertas de sesiones anteriores).
 
 ---
 
+## 2026-10-05 — Permiso propio del POS: `pos:access` decide quién entra a la caja (0.3.12)
+
+**Decisión del dueño:** "Solo lectura" no debe poder cobrar, y la caja debe decidir por PERMISOS, no por nombre de rol; y mejor un permiso
+propio del POS, declarado en este proyecto, que el CRM asigna y manda con cada usuario.
+
+**Cómo funciona**
+- **Declaración:** `pos/backend/src/sync/permissions.ts` (`POS_ACCESS_PERMISSION = "pos:access"`). El CRM necesita además la fila en su
+  catálogo para poder asignarlo a roles desde su editor: migración de auth-service `20261005200000-add-pos-access-permission.js`
+  (descripción "Entrar a la caja POS y cobrar"). Por defecto lo reciben Administrador, Supervisor y Vendedor (los que cobraban);
+  NO Contador ni Solo lectura (solo `invoice:read`); los roles personalizados no lo reciben, se les da desde el editor de roles.
+- **Viaja con el usuario:** `GET /users` de auth-service devuelve ahora `permissions` (unión de los permisos de sus roles). La caja lo guarda en
+  `users.permissions` (JSON; migración `20261005190000_user_permissions`). Si el auth-service es anterior y no lo manda, la caja lo calcula con `GET /roles`.
+- **Quién entra:** login y middleware niegan a quien no tenga `pos:access` (login: 403 «Tu usuario no tiene acceso al POS…»; sesión abierta
+  que pierde el permiso: 401 al siguiente request). Un usuario sin dato (`null`: creado en la caja, o aún sin sincronizar) entra como siempre.
+- **Despliegue en cualquier orden:** si el catálogo del CRM aún NO tiene `pos:access` (caja actualizada antes que auth-service), la caja guarda
+  `null` para todos y nadie queda fuera; en cuanto auth-service lo trae, se aplica. Si falla la consulta del catálogo/roles no se toca lo guardado
+  y un usuario nuevo queda sin permisos hasta el siguiente sync.
+- **Verificado en producción** (auth `2c54a59`, gateway `ae552d5`): el catálogo del CRM trae `pos:access` y lo tienen Administrador, Supervisor y
+  Vendedor, no Contador ni Solo lectura; `GET /users` manda `permissions` por usuario; login de `lectura1` (Solo lectura) → 403 con el mensaje claro,
+  `vendedor1`, `admin2` y el usuario local entran. Con un rol personalizado asignado a `lectura1`: darle `pos:access` al rol → la caja lo recibe en el
+  mismo segundo (`identity.role.updated`) y `lectura1` entra; quitárselo → la sesión que ya tenía abierta recibe 401 y el login vuelve a negar.
+  En el modo de compatibilidad (CRM sin `pos:access` aún) todos siguieron entrando. Quedó en el CRM el rol personalizado «Prueba POS (borrar)»
+  (no hay endpoint para borrar roles ni para quitarlos de un usuario).
+- **Tiempo real:** el gateway ya avisa `identity.role.*` e `identity.user.*` (`catalog.changed`): cambiarle permisos a un rol, o el rol a un usuario,
+  llega a las cajas en segundos. Respaldo: cron de 5 min y sync al arrancar.
+
+---
+
 ## 2026-10-05 — Usuarios CRM → caja: invitar, rol, deshabilitar, login, sin internet, reinicio (0.3.11)
 
 **Prueba** (6 usuarios `pos.*@prueba.test` invitados por la API del CRM, correos en Mailtrap sandbox, contraseñas puestas a mano por el
@@ -54,7 +82,7 @@ membresías activas del usuario) a `password_reset_completed` y a `profile_compl
 antes tardaba hasta el ciclo de 5 min y la vieja seguía valiendo).
 
 **Hallazgos SIN corregir (decisión pendiente):**
-- Rol "Solo lectura" y "Supervisor" del CRM se mapean a CASHIER en la caja (`pull.ts`: solo `Administrador` → ADMIN). Un usuario de solo
+- **Resuelto en 0.3.12 con el permiso `pos:access` (ver la entrada de arriba).** Rol "Solo lectura" y "Supervisor" del CRM se mapean a CASHIER en la caja (`pull.ts`: solo `Administrador` → ADMIN). Un usuario de solo
   lectura puede abrir/cerrar caja y, como `POST /sales` solo exige sesión, cobrar. No se hizo una venta real para no generar factura.
 - `auth-service`: el controlador de `POST /users/invite` descarta `establishmentIds` (el caso de uso y el validador sí lo soportan): un
   invitado no queda en ningún establecimiento y no aparece en ninguna caja (los Administradores sí, se incluyen siempre).

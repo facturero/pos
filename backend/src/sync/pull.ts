@@ -3,13 +3,16 @@ import {
   fetchRemoteCategories,
   fetchRemoteCustomerDetail,
   fetchRemoteCustomers,
+  fetchRemotePermissionCodes,
   fetchRemoteProducts,
+  fetchRemoteRoles,
   fetchRemoteTaxRates,
   fetchRemoteUsers,
   getCountryCode,
   type RemoteProduct,
 } from "./admin-client.js";
 import { staleRemoteIds } from "./stale.js";
+import { permissionsForRoles, permissionsToStore, POS_ACCESS_PERMISSION } from "./permissions.js";
 import { syncTheme } from "../theme/service.js";
 
 // Baja del admin y deja espejados localmente (por `remoteId`, uuid):
@@ -225,7 +228,27 @@ async function syncUsers(): Promise<number> {
   const establishmentId = posConfig?.establishmentId ?? undefined;
   const remoteUsers = await fetchRemoteUsers(establishmentId);
 
+  // Acceso al POS (permiso `pos:access`). El CRM manda a cada usuario con sus permisos; si un auth-service anterior
+  // no los manda se calculan con los permisos de cada rol. Si algo de esto falla no se tumba el sync de usuarios: los
+  // permisos que ya había se conservan, y un usuario NUEVO queda sin permisos ("[]") hasta el siguiente sync.
+  const catalog = await fetchRemotePermissionCodes().catch((err) => {
+    console.warn(`[sync] no se pudo bajar el catálogo de permisos: ${message(err)}`);
+    return null;
+  });
+  const catalogHasPosAccess = catalog ? catalog.includes(POS_ACCESS_PERMISSION) : null;
+  const roles = remoteUsers.some((u) => u.permissions === undefined)
+    ? await fetchRemoteRoles().catch((err) => {
+        console.warn(`[sync] no se pudieron bajar los roles y sus permisos: ${message(err)}`);
+        return null;
+      })
+    : null;
+
   for (const ru of remoteUsers) {
+    const permissions = permissionsToStore({
+      catalogHasPosAccess,
+      fromUser: ru.permissions,
+      fromRoles: roles ? permissionsForRoles(ru.roles, roles) : undefined,
+    });
     // El nombre de usuario con el que el cajero hace login en el POS es el
     // código de 7 caracteres que genera auth-service. Si por cualquier razón
     // el remoto no lo trae todavía (p.ej. usuario viejo), se cae al email.
@@ -242,6 +265,7 @@ async function syncUsers(): Promise<number> {
           email,
           role,
           active: ru.status === "active",
+          permissions,
           // Se baja el hash del CRM (argon2id) para que el login valide
           // localmente, sin internet. Se pasa tal cual (string | null):
           // si un admin viejo todavía no manda el campo, Prisma lo ignora y
@@ -255,6 +279,7 @@ async function syncUsers(): Promise<number> {
           email,
           role,
           active: ru.status === "active",
+          permissions: permissions === undefined ? "[]" : permissions,
           passwordHash: ru.passwordHash ?? null,
         },
       })

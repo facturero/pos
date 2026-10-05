@@ -1,6 +1,7 @@
 import type { Context, Next } from "hono";
 import { verifyToken } from "../utils/jwt.js";
 import { prisma } from "../db.js";
+import { hasPosAccess } from "../sync/permissions.js";
 
 // Autenticación local del POS (cajero vs administrador). El backend solo
 // escucha en 127.0.0.1, así que esto protege el uso multi-usuario en el
@@ -18,9 +19,14 @@ export async function authMiddleware(c: Context, next: Next) {
     // EN LA BASE en cada petición para que deshabilitarlo en el CRM, o cambiarle el rol, surta efecto en la sesión
     // que ya tiene abierta y no solo en el siguiente login (visto el 2026-10-05: un cajero deshabilitado seguía
     // cobrando con su sesión). Una consulta por clave primaria en SQLite local cuesta microsegundos.
-    const current = await prisma.user.findUnique({ where: { id: payload.sub }, select: { active: true, role: true } });
+    const current = await prisma.user.findUnique({ where: { id: payload.sub }, select: { active: true, role: true, permissions: true } });
     if (!current || !current.active) {
       return c.json({ error: "Tu usuario fue desactivado. Inicia sesión de nuevo o consulta al administrador." }, 401);
+    }
+    // El acceso sale del PERMISO `pos:access` que el CRM da a los roles del usuario (ver sync/permissions.ts), no del
+    // nombre del rol: quitárselo en el CRM le cierra la sesión que ya tiene abierta.
+    if (!hasPosAccess(current.permissions)) {
+      return c.json({ error: "Tu usuario no tiene acceso al POS. Pide al administrador el permiso «pos:access»." }, 401);
     }
     c.set("user", { ...payload, role: current.role });
   } catch {
