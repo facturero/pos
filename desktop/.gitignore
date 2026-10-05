@@ -1,0 +1,6 @@
+node_modules/
+out/
+# El runtime de Node que va dentro del .exe (92 MB) y el backend preparado para empaquetar (351 MB):
+# los dos los produce `npm run prepare:resources` y ninguno de los dos va a git.
+vendor/
+stage/

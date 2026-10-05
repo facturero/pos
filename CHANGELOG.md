@@ -24,6 +24,114 @@ de IVA en la caja y stock real (siguen abiertas de sesiones anteriores).
 
 ---
 
+## 2026-09-30 — Sesión: `restartCmd` también reinicia la ventana; arranca `pos/desktop/` (Electron) para Windows
+
+**Qué se hizo:** dos cosas independientes. La primera cierra un cabo suelto de la sesión anterior
+(el bug de la ventana con caché vieja, encontrado a mano en esa VM). La segunda arranca un
+**proyecto nuevo y separado** para distribuir el POS como `.exe` de Windows, sin tocar `os/`
+(kiosco/ISO) — pedido explícito del dueño: el `.exe` es solo para el cliente que quiere usar el
+POS como una app de escritorio más, no reemplaza el equipo dedicado.
+
+1. **`restartCmd` ahora reinicia backend Y ventana (Linux, kiosco).** La sesión anterior encontró
+   (a mano, forzando una actualización real) que tras cambiar `current` y reiniciar solo el
+   backend, la ventana Tauri se quedaba con los nombres de archivo `.js` con hash de la build
+   vieja (Vite) y pedía un asset que ya no existía (404) al navegar — se arregló a mano esa vez
+   matando el proceso para que `launch.sh` la relanzara. Ahora es parte del flujo normal:
+   `os/provision/restart-app.sh` (nuevo) hace las dos cosas — `systemctl restart
+   facturero-backend` y `pkill -f facturero-pos-app` (`launch.sh` ya la relanza sola) — y es lo
+   único que `updater.json`/`restartCmd` invoca. La regla de sudoers pasó de autorizar dos
+   comandos `systemctl` sueltos a autorizar este único script (root:root 0755, `facturero` no
+   puede editarlo) — más simple de razonar y ya no depende de que el actualizador arme la línea de
+   systemctl correcta.
+2. **`pos/desktop/` (nuevo, Electron) — el `.exe` de Windows "como Discord".** Primer intento de
+   esta sesión fue reusar el binario de Tauri del kiosco con una ventana Windows + un supervisor en
+   PowerShell hecho a mano (`watchdog.ps1`) — el dueño lo corrigió: mejor una librería hecha para
+   esto, como Electron (que es literalmente lo que usa Discord), y como proyecto aparte para no
+   mezclar con `os/`. Se descartó ese primer intento (nada de PowerShell quedó) y se dejó
+   `frontend/src-tauri/src/main.rs` exactamente como estaba — el kiosco Linux no cambia en nada.
+   `pos/desktop/` reutiliza tal cual `pos/backend` (Node/Prisma/SQLite) y `pos/frontend` (el mismo
+   build de Vite): el proceso principal de Electron levanta el backend como hijo usando el Node
+   que el propio Electron ya trae adentro (sin depender de un Node del sistema, a diferencia del
+   watchdog descartado) y abre una `BrowserWindow` normal apuntando a `http://127.0.0.1:4000` — la
+   misma pantalla que ve el kiosco, sin fullscreen ni kiosk-lock. El auto-update queda para
+   `electron-updater` contra GitHub Releases (no reimplementa `os/updater/updater.mjs`: ese sigue
+   siendo solo del kiosco Linux).
+   - Se mantiene `POS_MODE` (`kiosk` por defecto | `desktop`) en `backend/src/system/mode.ts`,
+     expuesto en `GET /system/info` — sigue siendo útil aquí: Electron pone `POS_MODE=desktop` al
+     levantar el backend, y `StatusBar.vue` ya oculta hora/apagar/reiniciar con eso (pedido
+     explícito: "el .exe no debería tener apagar ni reiniciar ni la hora porque Windows ya hace
+     eso"). `/system/poweroff` y `/system/reboot` también rechazan explícito (400) en modo desktop.
+
+**Qué queda como consecuencia:**
+- `pos/desktop/` trae `package.json` + `src/main.js` + scripts de empaquetado y un `README.md` con
+  lo que falta. Primera versión (scaffold mío) NO arrancaba: el backend usa `argon2` (addon nativo)
+  y el Node v20 embebido de Electron lo mataba en silencio, relanzado en bucle. Corregido en una
+  segunda pasada (opencode, probado en ejecución): el `.exe` lleva su propio `node.exe` 22.14,
+  migra antes de arrancar, log a archivo, instancia única, reintentos con tope. **Sigue sin haber
+  `.exe` generado** ni icono ni `electron-updater` cableado; el login no se probó de punta a punta
+  (una instalación nueva cae en el emparejamiento). Detalle en `pos/desktop/README.md`.
+- `restart-app.sh` verificado en la VM `pos-test-ssh1` (2026-10-04): al ejecutarlo como
+  `facturero` vía sudo cambian los PID del backend y de la ventana, `/health` responde, y la
+  ventana pide los assets nuevos sin ningún 404. No se probó todavía un ciclo completo de
+  actualización con una versión nueva publicada.
+- El pipeline de release (`os/release/`) sigue siendo solo para Linux — no lo toca nada de esto.
+  `pos/desktop/` no depende de `os/updater`; usa `electron-updater`, con su propio ciclo de
+  publicación (ver `pos/desktop/README.md`).
+- Nada de esto toca el camino de Linux/ISO ya probado: `POS_MODE` por defecto sigue siendo `kiosk`,
+  el instalador sigue escribiéndolo explícito en `pos.env`, y `main.rs` quedó igual — un equipo ya
+  instalado se comporta exactamente igual que antes.
+
+---
+
+## 2026-09-29/30 — Sesión: dos bugs reales de la 0.3.0 encontrados con una VM real, y arreglados
+
+**Qué se hizo:** se probó la tematización (sesión anterior) de punta a punta contra una caja real
+(VM con SSH, `pos-test-ssh1`, contra el CRM de producción) y salieron DOS bugs reales del
+actualizador, ninguno relacionado con el tema en sí — el primero bloqueaba CUALQUIER
+actualización de la app desde 0.2.6, y llevaba ahí desde antes de esta sesión:
+
+1. **Permiso de ejecución perdido (bloqueaba TODA actualización).** `sign-release.mjs` empaquetaba
+   el `.tar.gz` con el `tar` de Windows sobre una carpeta que Docker Desktop había montado desde
+   el host. NTFS no tiene bit de ejecución: el motor de Prisma (`schema-engine-debian-openssl-3.0.x`)
+   llegaba al equipo sin poder ejecutarse (`EACCES`), la migración fallaba, y el actualizador —con
+   buen criterio— marcaba esa versión como mala PARA SIEMPRE (no la reintenta sola). El smoke test
+   no lo detectó porque corre DENTRO de Linux, sobre el stage sin empaquetar. **Arreglo:**
+   `build-release.sh` ahora arma el `.tar.gz` DENTRO del contenedor Linux (variable `/pkg`, mapeada
+   a un directorio nuevo `${STAGE}.pkg`) y `sign-release.mjs` lo usa tal cual si recibe `--tarball`
+   (si no, sigue empaquetando él mismo — lo necesita `os/updater/updater.test.mjs`, que arma su
+   propio stage de prueba sin pasar por Docker).
+2. **"database is locked" al migrar con la pantalla encendida.** `prisma migrate deploy` corre en
+   un PROCESO APARTE del backend y no hereda el `PRAGMA busy_timeout=10000` que el backend se pone
+   a sí mismo (`db.ts`); si la caja sigue viva (la barra de estado consulta `/system/info` cada
+   10 s), puede chocar con SQLite un instante. Antes de este arreglo, ESE choque —puramente
+   momentáneo— también dejaba la versión mala para siempre. **Arreglo:** `update()` en
+   `updater.mjs` ahora acepta `migrateRetries`/`migrateRetryDelayMs` (opcional, por defecto 0 =
+   comportamiento de siempre) y `provision/updater.json` los activa (5 intentos, 3 s). Dos pruebas
+   nuevas en `updater.test.mjs` (12 casos en total, todos en verde).
+
+**Un tercer hallazgo, de entorno, no de código:** en esa misma VM, `facturero-updater.timer`
+(solo `OnBootSec`, sin `OnCalendar`) nunca calculaba su próxima corrida — pero le pasaba
+IGUAL a `apport-autoreport.timer`, de Ubuntu, sin que lo hubiéramos tocado. Es una rareza del
+reloj virtualizado de esa VM con temporizadores puramente monotónicos, no algo que rompimos.
+**Arreglo defensivo:** se añadió `OnCalendar=hourly` junto al `OnBootSec=5min` que ya había en
+`provision/units/facturero-updater.timer` — `OnCalendar` sí calculaba bien en esa misma VM, así
+que ahora hay dos caminos y systemd dispara con el que llegue primero.
+
+**Por qué importa la distinción (para quien lea esto después):** `os/updater` (el programa que
+hace las actualizaciones) vive en la capa de SISTEMA OPERATIVO, no en la de app — por diseño no
+se actualiza solo (ver `HANDOFF-pos-os.md`, "qué vive en la ISO"). Los dos arreglos de arriba
+YA ESTÁN en el repo y beneficiarán la próxima ISO/reinstalación, pero una caja ya instalada con
+una ISO vieja sigue con el `os/updater` de antes — a esa hay que actualizarla a mano una vez, o
+reinstalarla, para que tenga los reintentos. La app en sí (`backend/`, `frontend/`) sigue
+actualizándose sola sin tocar la ISO, como siempre.
+
+**Releases publicadas para llegar hasta 0.3.3:** 0.3.0 (rota, bug 1), 0.3.1 (arregla bug 1), 0.3.2
+(arregla bug 2), 0.3.3 (cambio menor de prueba, `autocomplete` en el login). Todas verificadas:
+firma Ed25519, sha256 y tamaño contra lo publicado en GitHub, y el bit `+x` del motor de Prisma
+dentro del `.tar.gz` descargado.
+
+---
+
 ## 2026-09-28 — Sesión: tematización del POS (CRM + caja)
 
 **Qué se hizo:** el cliente personaliza sus cajas desde el CRM. Un tema (colores, modo oscuro, tipografía,

@@ -8,6 +8,11 @@
 //   POS_WINDOW_URL  (por defecto http://127.0.0.1:4000, el POS). Durante el primer arranque el instalador la
 //   apunta a su pantalla de progreso (os/installer-ui, http://127.0.0.1:4080).
 //
+// Este binario es SOLO para el kiosco Linux (pantalla completa, un único programa visible). La
+// versión de escritorio (Windows, "como Discord": ventana normal, se instala y actualiza sola) es
+// un proyecto aparte con Electron en pos/desktop/ — no comparte este binario de Tauri, así que este
+// archivo no necesita saber nada de eso.
+//
 // `open_devtools`: comando invocable desde el frontend (App.vue escucha F12) para abrir el inspector de la
 // webview y poder leer la pestaña Red directamente en la pantalla del POS, sin SSH ni un navegador aparte.
 // Requiere la feature "devtools" de tauri (ver Cargo.toml).
