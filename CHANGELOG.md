@@ -24,6 +24,44 @@ de IVA en la caja y stock real (siguen abiertas de sesiones anteriores).
 
 ---
 
+## 2026-10-05 — Prueba completa CRM → caja (clientes, contactos, direcciones, categorías, productos) y lo que reveló (0.3.9)
+
+**Qué se probó** (CRM real vía API con la sesión del usuario, caja `pos-test-nuevo` con 0.3.8 real, base leída
+directamente en la VM): crear / editar / desactivar / reactivar / borrar cada tipo y medir cuánto tarda en llegar.
+
+| Cambio en el CRM | Llega a la caja | Latencia medida |
+|---|---|---|
+| Cliente creado (persona, empresa, sin identificación) | Sí, con tipo, RUC/cédula, email, teléfono | ~4 s |
+| Contacto / dirección añadidos o editados | Sí | ~25-30 s (el aviso `customer.contact.*` / `customer.address.*` llega ~25 s tarde; causa sin investigar, el retraso es antes de la caja: el evento ya sale tarde del lado del CRM) |
+| Cliente desactivado | Llega como `INACTIVE` | ~4 s |
+| Producto creado / editado / precio / IVA / SKU | Sí, con categoría e impuestos | ~4-6 s |
+| Producto desactivado y reactivado | Sí (0.3.8) | ~4 s |
+| **Categoría renombrada** | Sí, **pero solo en el ciclo de 5 min** (no hay aviso en tiempo real) | 2 m 35 s |
+| **Categoría borrada en el CRM** | **No: seguía en la caja para siempre** | nunca |
+| **Producto sin categoría en el CRM** | **No: conservaba la anterior** | nunca |
+| **Contacto / dirección borrados en el CRM** | **No: seguían en la caja** | nunca |
+| **Cliente desactivado** | Llegaba `INACTIVE` pero **la caja lo seguía ofreciendo y se le podía vender** | — |
+
+**Qué se arregló (POS, `pull.ts` / rutas):**
+- Categorías borradas en el CRM se quitan de la caja **antes** del upsert (el nombre es único: borrar y recrear una
+  categoría con el mismo nombre habría tumbado el sync entero con un choque de unicidad); sus productos quedan sin categoría.
+- Un producto sin categoría en el CRM limpia la que tenía en la caja (`null`, no `undefined`, que Prisma ignora).
+- Contactos y direcciones que el detalle del cliente ya no trae se borran (solo si el detalle se bajó bien).
+- Usuarios quitados del establecimiento (la lista se pide filtrada, así que no llegan como inactivos, solo desaparecen)
+  se desactivan en la caja; con lista vacía no se toca a nadie.
+- El buscador de clientes de la caja solo ofrece clientes `ACTIVE`, y `POST /sales` rechaza un cliente desactivado con un
+  mensaje claro (Consumidor Final id 1 siempre vale).
+
+**Qué se arregló (api-gateway, `catalog-routing.ts`, hay que desplegar):** el hub ahora también avisa `catalog.changed`
+para `product.category.*` y `identity.user.*` (deshabilitado, rol, establecimientos). Antes un usuario deshabilitado en el
+CRM seguía pudiendo entrar a la caja hasta 5 min. **No cubierto a propósito:** `tax.tax_rate.upserted` no lleva
+`organizationId` (las tasas son por país), no hay sala a la que avisar; un cambio de tasa sigue entrando por el ciclo de 5 min.
+
+**Sin probar todavía:** alta de usuario (la invitación envía un correo real y el token solo llega por ese correo) y cambio
+de contraseña de un usuario; no se tocaron los 5 usuarios reales del CRM.
+
+---
+
 ## 2026-10-05 — Sync: un producto desactivado en el CRM ya se quita de la caja (0.3.8)
 
 **Qué pasó:** al desactivar los 5 productos de prueba en el CRM (el servicio de productos no tiene borrado,

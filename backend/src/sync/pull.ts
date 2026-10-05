@@ -15,8 +15,10 @@ import { syncTheme } from "../theme/service.js";
 // Baja del admin y deja espejados localmente (por `remoteId`, uuid):
 // categorías, productos, usuarios y clientes (con contactos y direcciones).
 // Es un upsert: si ya existe localmente (por remoteId) lo actualiza, si no lo
-// crea. Nunca borra localmente aunque desaparezcan del admin — más seguro
-// ante errores parciales de red.
+// crea. Lo que el admin ya no devuelve NO se borra si algo local lo referencia (productos y clientes
+// quedan en las ventas ya hechas): se desactiva. Solo se borra lo que nadie referencia: categorías,
+// contactos y direcciones. Todo esto solo ocurre tras una descarga completa (request() lanza ante
+// cualquier error), nunca con una respuesta a medias.
 //
 // Cada sección se ejecuta en su propio try/catch: si un servicio del admin
 // está caído (p.ej. customer-service), los demás siguen sincronizando y el
@@ -103,6 +105,26 @@ async function syncCategoriesAndProducts(): Promise<{
 
   const categoryIdMap = new Map<string, number>(); // remoteId (uuid) -> id local
 
+  // Categorías borradas en el CRM: se quitan ANTES del upsert. `name` es único, así que una categoría
+  // borrada y vuelta a crear con el mismo nombre (otro uuid) chocaría con la vieja y tiraría el sync entero.
+  // Sus productos quedan sin categoría hasta que el bucle de productos les asigne la que corresponda.
+  const localCategories = await prisma.category.findMany({
+    where: { remoteId: { not: null } },
+    select: { id: true, remoteId: true },
+  });
+  const goneCategories = new Set(
+    staleRemoteIds(
+      localCategories.map((c) => c.remoteId as string),
+      remoteCategories.map((c) => c.id),
+    ),
+  );
+  const goneCategoryIds = localCategories.filter((c) => goneCategories.has(c.remoteId as string)).map((c) => c.id);
+  if (goneCategoryIds.length > 0) {
+    await prisma.product.updateMany({ where: { categoryId: { in: goneCategoryIds } }, data: { categoryId: null } });
+    await prisma.category.deleteMany({ where: { id: { in: goneCategoryIds } } });
+    console.log(`[sync] ${goneCategoryIds.length} categoría(s) borrada(s) en el CRM: se quitan de la caja`);
+  }
+
   for (const rc of remoteCategories) {
     const local = await prisma.category.upsert({
       where: { remoteId: rc.id },
@@ -122,7 +144,9 @@ async function syncCategoriesAndProducts(): Promise<{
   const rateById = new Map((await fetchRemoteTaxRates(countryCode)).map((r) => [r.id, r]));
 
   for (const rp of remoteProducts) {
-    const localCategoryId = rp.categoryId ? categoryIdMap.get(rp.categoryId) : undefined;
+    // Sin categoría en el CRM => null (se limpia la que tuviera). Con una categoría que no llegó en la lista
+    // => undefined (no se toca): no se pierde un dato por una respuesta inconsistente.
+    const localCategoryId = rp.categoryId ? categoryIdMap.get(rp.categoryId) : null;
     const taxes = resolveProductTaxes(rp, rateById);
 
     await prisma.product.upsert({
@@ -224,6 +248,25 @@ async function syncUsers(): Promise<number> {
       });
   }
 
+  // Un usuario QUITADO de este establecimiento en el CRM no llega como "inactivo": la lista se pide filtrada por
+  // establecimiento, así que simplemente deja de aparecer, y sin esto seguía pudiendo entrar a esta caja. Se
+  // desactiva (no se borra: sus ventas apuntan a él). Si la lista llega vacía no se toca a nadie: preferible
+  // no cerrar el acceso a todos por una respuesta rara que dejar uno de más hasta el siguiente ciclo.
+  if (remoteUsers.length > 0) {
+    const localActive = await prisma.user.findMany({
+      where: { active: true, remoteId: { not: null } },
+      select: { remoteId: true },
+    });
+    const gone = staleRemoteIds(
+      localActive.map((u) => u.remoteId as string),
+      remoteUsers.map((u) => u.id),
+    );
+    if (gone.length > 0) {
+      await prisma.user.updateMany({ where: { remoteId: { in: gone } }, data: { active: false } });
+      console.log(`[sync] ${gone.length} usuario(s) ya no son de este establecimiento: se desactivan en la caja`);
+    }
+  }
+
   return remoteUsers.length;
 }
 
@@ -280,6 +323,16 @@ async function syncCustomers(): Promise<number> {
         });
       }
 
+      const keepContacts = detail.contacts.map((c) => c.id);
+      const localContacts = await prisma.customerContact.findMany({
+        where: { customerId: local.id, remoteId: { not: null } },
+        select: { remoteId: true },
+      });
+      const goneContacts = staleRemoteIds(localContacts.map((c) => c.remoteId as string), keepContacts);
+      if (goneContacts.length > 0) {
+        await prisma.customerContact.deleteMany({ where: { remoteId: { in: goneContacts } } });
+      }
+
       for (const a of detail.addresses) {
         await prisma.customerAddress.upsert({
           where: { remoteId: a.id },
@@ -306,6 +359,18 @@ async function syncCustomers(): Promise<number> {
             isPrimary: a.isPrimary,
           },
         });
+      }
+
+      const localAddresses = await prisma.customerAddress.findMany({
+        where: { customerId: local.id, remoteId: { not: null } },
+        select: { remoteId: true },
+      });
+      const goneAddresses = staleRemoteIds(
+        localAddresses.map((x) => x.remoteId as string),
+        detail.addresses.map((x) => x.id),
+      );
+      if (goneAddresses.length > 0) {
+        await prisma.customerAddress.deleteMany({ where: { remoteId: { in: goneAddresses } } });
       }
     } catch (err) {
       console.warn(`[sync] detalle del cliente ${rc.id} no disponible: ${message(err)}`);

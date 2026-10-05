@@ -138,6 +138,17 @@ saleRoutes.post("/", async (c) => {
         throw new Error("La sesión de caja no está abierta");
       }
 
+      // Consumidor final (id 1) siempre se puede. Otro cliente solo si sigue activo: si lo desactivaron en el
+      // CRM mientras estaba elegido en el carrito, la venta se rechaza con un mensaje claro en vez de
+      // facturarle a alguien dado de baja.
+      if (finalCustomerId !== 1) {
+        const customer = await tx.customer.findUnique({ where: { id: finalCustomerId }, select: { status: true } });
+        if (!customer) throw new Error("El cliente no existe");
+        if (customer.status !== "ACTIVE") {
+          throw new Error("El cliente fue desactivado en el CRM: elige otro cliente o vende a Consumidor Final");
+        }
+      }
+
       const products = await tx.product.findMany({ where: { id: { in: items.map((i) => i.productId) } } });
       for (const item of items) {
         const product = products.find((p) => p.id === item.productId);

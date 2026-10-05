@@ -9,8 +9,11 @@ customerRoutes.use("*", authMiddleware);
 customerRoutes.get("/", async (c) => {
   const q = c.req.query("q")?.trim() ?? "";
 
+  // Un cliente desactivado en el CRM sigue guardado (sus ventas lo referencian) pero no se ofrece para vender.
+  // Visto el 2026-10-05: lo desactivado en el CRM seguía saliendo en el buscador de la caja.
   const where = q
     ? {
+        status: "ACTIVE" as const,
         OR: [
           { businessName: { contains: q } },
           { tradeName: { contains: q } },
@@ -19,7 +22,7 @@ customerRoutes.get("/", async (c) => {
           { phone: { contains: q } },
         ],
       }
-    : {};
+    : { status: "ACTIVE" as const };
 
   const [results, consumidor] = await Promise.all([
     prisma.customer.findMany({
