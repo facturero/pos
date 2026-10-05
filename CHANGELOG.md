@@ -49,9 +49,16 @@ cargó todo con 200 y después hubo 0.
 
 **Qué queda como consecuencia:**
 - `updater.mjs`, `updater.json` y `restart-app.sh` son capa del sistema operativo: **las cajas ya
-  instaladas siguen con el actualizador viejo y NO pueden actualizarse** hasta recibir esto por
-  ISO nueva o aplicándolo a mano por SSH (como se hizo en la VM). Una release de la app no lo
-  arregla.
+  instaladas siguen con el actualizador viejo y NO pueden actualizarse** hasta recibir esto. Una
+  release de la app no lo arregla. Las ISO nuevas ya lo traen (`install.sh`); para las ya
+  instaladas con SSH habilitado: `os/provision/patch-box.sh <usuario@host> [-p puerto] [-i clave]`
+  (corre `patch-updater.sh` en la caja). Idempotente, con respaldo en
+  `/var/backups/facturero-patch/<fecha>/` y restauración automática si algo falla; valida el sudoers
+  con `visudo` antes de instalarlo y no reinicia nada. También libera de `state.bad` las versiones
+  más nuevas que la instalada (el actualizador viejo las marcaba malas por este mismo bloqueo, no
+  por culpa de ellas). Probado en la VM: caja degradada a 0.3.3 con todo lo viejo → se atasca con
+  `database is locked` y 0.3.4 "ya falló aquí" → `patch-box.sh` → el actualizador sube a 0.3.4 solo.
+  Las cajas SIN SSH habilitado solo se arreglan con ISO nueva o acceso físico.
 - Los tags `v0.3.1`–`v0.3.3` apuntan a `44d498c`, que no tiene los arreglos con los que se armaron
   esas releases; los paquetes publicados son correctos. `v0.3.4` sí apunta al commit bueno.
 
