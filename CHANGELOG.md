@@ -24,6 +24,30 @@ de IVA en la caja y stock real (siguen abiertas de sesiones anteriores).
 
 ---
 
+## 2026-10-05 — Sync: un producto desactivado en el CRM ya se quita de la caja (0.3.8)
+
+**Qué pasó:** al desactivar los 5 productos de prueba en el CRM (el servicio de productos no tiene borrado,
+solo `POST /products/:id/disable`), la caja `pos-test-nuevo` recibió los 5 avisos `product.product.disabled`
+y siguió mostrando y cobrando los 5 como activos. Causa: el POS pide la lista con `?status=active&…`
+(`fetchRemoteProducts`), así que un producto desactivado —o quitado del establecimiento de la caja— no llega
+como "inactivo": **deja de aparecer**; y `pull.ts` solo hacía `upsert` de lo que llegaba, nunca desactivaba
+lo que faltaba. El `active: rp.status === "active"` que ya existía nunca llegaba a ver un producto inactivo.
+Efecto en un negocio real: un producto retirado en el CRM seguía vendiéndose en la caja, y facturación lo
+recibía igual.
+
+**Arreglo:** tras el `upsert`, `pull.ts` desactiva (no borra: las ventas ya hechas apuntan a esas filas) los
+productos locales activos con `remoteId` que el CRM ya no lista. El cálculo está en `stale.ts`
+(`staleRemoteIds`, 5 pruebas en `stale.test.ts`). Solo se ejecuta si la descarga salió bien (`request()`
+lanza ante cualquier error), no con una respuesta a medias. La venta ya rechazaba productos inactivos y la
+pantalla solo lista los activos, así que no hizo falta tocar nada más. Un producto que vuelve a activarse
+reaparece en la lista y el `upsert` lo reactiva.
+
+**Comprobado que NO tiene el mismo problema:** usuarios y clientes se piden al CRM sin filtro de estado
+(`/users`, `/customers`), así que sus desactivaciones llegan con `status` y se aplican (`active: ru.status ===
+"active"`, `status: … "INACTIVE"`). No se evaluó el caso de eliminación definitiva en el CRM (si existiera).
+
+---
+
 ## 2026-10-05 — Sync: un aviso del CRM con un ciclo en marcha ya no se pierde (0.3.7)
 
 **Qué pasó:** al crear 5 productos casi a la vez en el CRM (prueba de centavos con decimales), la caja

@@ -9,6 +9,7 @@ import {
   getCountryCode,
   type RemoteProduct,
 } from "./admin-client.js";
+import { staleRemoteIds } from "./stale.js";
 import { syncTheme } from "../theme/service.js";
 
 // Baja del admin y deja espejados localmente (por `remoteId`, uuid):
@@ -153,6 +154,26 @@ async function syncCategoriesAndProducts(): Promise<{
       },
     });
   }
+
+  // Lo que el CRM ya no lista (desactivado, o quitado del establecimiento de esta caja) se desactiva aquí:
+  // la lista se pide con status=active, así que esos productos NO llegan como "inactivos", solo desaparecen.
+  // Se desactivan y no se borran: las ventas ya hechas siguen apuntando a ellos. Esta línea solo se alcanza
+  // si la descarga salió bien (request() lanza ante cualquier error), nunca con una respuesta a medias.
+  const localActive = await prisma.product.findMany({
+    where: { active: true, remoteId: { not: null } },
+    select: { remoteId: true },
+  });
+  const stale = staleRemoteIds(
+    localActive.map((p) => p.remoteId as string),
+    remoteProducts.map((p) => p.id),
+  );
+  for (let i = 0; i < stale.length; i += 500) {
+    await prisma.product.updateMany({
+      where: { remoteId: { in: stale.slice(i, i + 500) } },
+      data: { active: false, syncedAt: new Date() },
+    });
+  }
+  if (stale.length > 0) console.log(`[sync] ${stale.length} producto(s) desactivado(s) en el CRM: se quitan de la caja`);
 
   return { categories: remoteCategories.length, products: remoteProducts.length };
 }
