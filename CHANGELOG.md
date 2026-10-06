@@ -24,6 +24,21 @@ de IVA en la caja y stock real (siguen abiertas de sesiones anteriores).
 
 ---
 
+## 2026-10-06 — App de Windows (`.exe`) generada: `POS-Desktop-Setup-0.3.12.exe` (sin release del kiosco)
+
+`pos/desktop/` (Electron, proyecto aparte de `os/`) ya produce el instalador: `npm run build:win` → `out/POS-Desktop-Setup-0.3.12.exe`
+(205 MB, NSIS de un clic, por usuario) + `latest.yml` + `.blockmap`. Lleva su `node.exe` 22.14.0, el backend de producción (351 MB podado de motores
+ajenos) y el `frontend/dist`. **Qué se añadió:** icono (`build/icon.ico`, `npm run icon`); `electron-updater` cableado (`startAutoUpdate()` en `main.js`:
+comprueba al abrir y cada 6 h, baja sola e instala al cerrar; solo empaquetada); la versión del `.exe` es la de `package.json` y `stage-backend.mjs` la escribe
+en `dist/VERSION` (antes el backend decía "sin versión"); `scripts/smoke-unpacked.mjs`, prueba de humo del paquete armado sin abrir ventana (migra una base
+temporal, `/health`, `/system/info` con versión y modo `desktop`, sirve la pantalla, argon2 carga) — **pasa**.
+**Qué NO está hecho:** sin firma de código (SmartScreen avisará); la ventana de Electron empaquetada no se abrió en esta máquina (para no registrar el
+autoinicio de Windows desde una carpeta de pruebas); el login de punta a punta tras emparejar. **Publicar:** subir el `.exe`, el `.blockmap` y `latest.yml` al
+MISMO Release `vX` del kiosco (convive con su `latest.json`). En Windows sin modo desarrollador `electron-builder` falla extrayendo `winCodeSign`: ver
+`desktop/README.md`.
+
+---
+
 ## 2026-10-05 — Prueba AUTOMÁTICA de usuarios, roles, permisos y desactivación (sin release: solo pruebas)
 
 `npm run test:e2e` (en `pos/backend`; usa Docker) levanta un CRM simulado en localhost con la forma de auth-service (`/users` con `permissions`,

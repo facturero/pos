@@ -355,6 +355,29 @@ async function createWindow() {
   win.loadURL(BASE_URL);
 }
 
+// ---------------------------------------------------------------- actualización
+
+// "Como Discord": al abrir (y luego cada 6 h) busca una versión nueva en los Releases de GitHub (`latest.yml`, que
+// electron-builder publica junto al instalador), la baja sola y la instala al cerrar la app. Nunca interrumpe una
+// venta: no hay reinicio forzado. Sin red, sin Release con `latest.yml` o en desarrollo, solo queda una línea en el log.
+// OJO: es un canal DISTINTO del `latest.json` firmado del kiosco (os/updater); conviven en el mismo Release.
+function startAutoUpdate() {
+  if (isDev) return;
+  let autoUpdater;
+  try {
+    ({ autoUpdater } = require("electron-updater"));
+  } catch (e) {
+    log("electron-updater no está disponible:", e.message);
+    return;
+  }
+  autoUpdater.logger = { info: (m) => log("[updater]", m), warn: (m) => log("[updater] WARN", m), error: (m) => log("[updater] ERROR", m), debug: () => {} };
+  autoUpdater.on("update-available", (i) => log(`[updater] hay una versión nueva: ${i.version}, descargando`));
+  autoUpdater.on("update-downloaded", (i) => log(`[updater] ${i.version} descargada; se instala al cerrar la app`));
+  const check = () => autoUpdater.checkForUpdates().catch((e) => log("[updater] no se pudo comprobar:", e.message));
+  check();
+  setInterval(check, 6 * 60 * 60 * 1000).unref();
+}
+
 // ---------------------------------------------------------------- arranque
 
 if (!fs.existsSync(nodeExe)) {
@@ -391,8 +414,7 @@ if (!app.requestSingleInstanceLock()) {
     // aparte (a diferencia del intento descartado con PowerShell): Electron ya sabe registrar esto.
     if (!isDev) app.setLoginItemSettings({ openAtLogin: true });
 
-    // TODO: llamar a require("electron-updater").autoUpdater.checkForUpdatesAndNotify() una vez el
-    // pipeline de release publique un artefacto de Windows (latest.yml) en GitHub Releases.
+    startAutoUpdate();
   });
 }
 

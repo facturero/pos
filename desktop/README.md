@@ -69,7 +69,7 @@ npm run build:win         # prepara los recursos y genera el instalador NSIS
 > y el backend muere al cargarlo sin decir nada, igual que pasaba antes de empaquetar su propio Node.
 > Comprueba con `npm -v` en la máquina destino.
 
-## Qué hay hoy (2026-09-30) — funciona en ejecución, todavía no es un `.exe`
+## Qué hace `main.js` (verificado el 2026-09-30 en ejecución)
 
 - `package.json`: `electron`, `electron-builder` y `electron-updater`; scripts `start`,
   `prepare:resources`, `build:win`, `pack`.
@@ -98,21 +98,34 @@ npm run build:win         # prepara los recursos y genera el instalador NSIS
   ("userData")` de Electron) — independiente del `/opt/facturero` del kiosco, que ni siquiera
   corre en la misma máquina.
 
-## Qué falta para tener un `.exe` real
+## Estado del `.exe` (2026-10-06): generado, falta publicarlo
 
-1. **Icono real.** `build/icon.ico` no existe todavía (electron-builder lo pide para el NSIS);
-   hoy la carpeta `build/` está vacía.
-2. **Cablear `electron-updater` de verdad.** El `TODO` en `main.js` marca dónde: falta llamar a
-   `autoUpdater.checkForUpdatesAndNotify()` una vez exista un artefacto de Windows publicado.
-3. **Publicar un artefacto de Windows en GitHub Releases.** `electron-builder --win --publish
-   always` sube su propio `latest.yml` (formato de `electron-updater`, DISTINTO del `latest.json`
-   que ya usa `os/updater` para el kiosco Linux) al mismo repo `facturero/pos` — pueden convivir en
-   los mismos Releases porque son archivos de manifiesto distintos, pero conviene revisar el
-   workflow de CI para no mezclar los dos procesos de firma/publicación por accidente.
-4. **Probar el login de verdad.** Verificado hasta la pantalla de emparejamiento: en una instalación
-   nueva `/setup/status` devuelve `{"paired": false}`, así que la app **no aterriza en el login**
-   sino en el flujo de emparejamiento con el CRM. El login solo es alcanzable después de emparejar,
-   y eso aún no se ha probado de punta a punta.
+`npm run build:win` produce `out/POS-Desktop-Setup-<versión>.exe` (205 MB, NSIS de un clic, por usuario, sin
+administrador) junto a `latest.yml` y el `.blockmap`. La versión del `.exe` es la de `package.json` (hoy **0.3.12**, la
+misma del kiosco) y `stage-backend.mjs` la escribe en `dist/VERSION` para que el backend la reporte.
+
+1. **Icono:** `build/icon.ico` (chip azul "POS", generado con `npm run icon`, sin dependencias).
+2. **Auto-actualización cableada:** `startAutoUpdate()` en `main.js` comprueba al abrir y cada 6 h, baja sola y
+   **instala al cerrar** (nunca reinicia en medio de una venta). Solo corre empaquetada. Lee `latest.yml` de los
+   Releases de `facturero/pos`; si el Release no lo trae, solo deja una línea en el log.
+3. **Prueba de humo:** `node scripts/smoke-unpacked.mjs` arranca el paquete armado (`out/win-unpacked`) con SU
+   `node.exe` y una base temporal: migra, comprueba `/health`, `/system/info` (versión + modo desktop), que sirve la
+   pantalla y que argon2 carga. No abre ventana.
+
+**Para publicarlo:** sube `POS-Desktop-Setup-X.exe`, `POS-Desktop-Setup-X.exe.blockmap` y `latest.yml` al **mismo**
+Release `vX` del kiosco (`latest.yml` es el manifiesto de `electron-updater`; no choca con el `latest.json` firmado
+del kiosco). El número del `.exe` debe ser el del Release: sube `version` en `package.json` antes de empaquetar.
+
+**Pendiente de verdad:**
+- **Sin firma de código.** Windows SmartScreen avisará de "editor desconocido" al instalar; hace falta un certificado
+  (electron-builder firma solo con `CSC_LINK`/`CSC_KEY_PASSWORD`). La actualización automática funciona igual sin firma.
+- **La ventana de Electron no se probó empaquetada** en esta máquina (se evitó para no registrar el autoinicio de
+  Windows desde una carpeta de pruebas). Lo comprobado es el paquete y el backend, no el `.exe` instalado.
+- **El login de punta a punta:** una instalación nueva cae en el emparejamiento con el CRM; hay que emparejar y entrar.
+
+> En Windows sin "modo desarrollador", `electron-builder` falla extrayendo `winCodeSign` ("Cannot create symbolic
+> link"): son dos enlaces de macOS que no se usan. Solución: extraer el `.7z` de la caché una vez (`7za x`) y dejar
+> la carpeta como `%LOCALAPPDATA%\electron-builder\Cache\winCodeSign\winCodeSign-2.6.0`.
 
 ## Layout en disco (una vez instalado)
 

@@ -1,6 +1,6 @@
 {
   "name": "pos-desktop",
-  "version": "0.0.1",
+  "version": "0.3.12",
   "private": true,
   "main": "src/main.js",
   "scripts": {
@@ -8,7 +8,8 @@
     "prepare:resources": "node scripts/fetch-node.mjs && node scripts/stage-backend.mjs",
     "build:win": "npm run prepare:resources && electron-builder --win",
     "pack": "npm run prepare:resources && electron-builder --dir",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "icon": "node scripts/make-icon.mjs"
   },
   "devDependencies": {
     "electron": "^33.4.11",
@@ -50,11 +51,26 @@
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "icon": "build/icon.ico"
     },
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    }
+      "oneClick": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false
+    },
+    "artifactName": "POS-Desktop-Setup-${version}.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "facturero",
+        "repo": "pos"
+      }
+    ]
+  },
+  "description": "POS Desktop (Windows) — el mismo POS que el kiosco, como app instalable",
+  "author": "noahsolutions",
+  "dependencies": {
+    "electron-updater": "^6.3.0"
   }
 }

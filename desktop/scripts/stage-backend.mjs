@@ -58,6 +58,13 @@ for (const f of ["package.json", "package-lock.json"]) {
 }
 copyDir(path.join(BACKEND, "prisma"), path.join(STAGE, "prisma"));
 copyDir(path.join(BACKEND, "dist"), path.join(STAGE, "dist"));
+// El backend lee su versión de dist/VERSION (en el kiosco la escribe build-release.sh). Sin este archivo la barra
+// inferior y /system/info dirían "sin versión". Es la de este paquete: desktop/package.json.
+fs.writeFileSync(
+  path.join(STAGE, "dist", "VERSION"),
+  `${JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).version}
+`
+);
 
 log("npm ci --omit=dev (puede tardar: baja argon2 y los motores de Prisma para Windows)…");
 npm(["ci", "--omit=dev", "--no-audit", "--no-fund"], STAGE);
