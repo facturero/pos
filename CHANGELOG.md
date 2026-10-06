@@ -32,6 +32,11 @@ ajenos) y el `frontend/dist`. **Qué se añadió:** icono (`build/icon.ico`, `np
 comprueba al abrir y cada 6 h, baja sola e instala al cerrar; solo empaquetada); la versión del `.exe` es la de `package.json` y `stage-backend.mjs` la escribe
 en `dist/VERSION` (antes el backend decía "sin versión"); `scripts/smoke-unpacked.mjs`, prueba de humo del paquete armado sin abrir ventana (migra una base
 temporal, `/health`, `/system/info` con versión y modo `desktop`, sirve la pantalla, argon2 carga) — **pasa**.
+**Corrección tras instalarlo (2026-10-06):** la primera versión no podía emparejar: `main.js` no pasaba `ADMIN_API_BASE_URL` al backend (en el kiosco la fija
+`install.sh --admin-api-base`), y `/setup/pair` devolvía 401 "no configurado" para cualquier código. Ahora `adminApiBase()` usa la variable de entorno, luego
+`%APPDATA%\pos-desktop\config.json` (`{"adminApiBase": "https://..."}`) y por defecto `https://api.noahsolution.com`. También se fijó `POS_THEME_ASSETS_DIR` a los
+datos del usuario (antes los logos del tema iban a una ruta relativa dentro de la carpeta de la app, que cada actualización reemplaza). La prueba de humo ahora
+comprueba que un código inválido llega al CRM. Windows con Smart App Control activo bloquea el instalador sin firma: ver `desktop/README.md`.
 **Qué NO está hecho:** sin firma de código (SmartScreen avisará); la ventana de Electron empaquetada no se abrió en esta máquina (para no registrar el
 autoinicio de Windows desde una carpeta de pruebas); el login de punta a punta tras emparejar. **Publicar:** subir el `.exe`, el `.blockmap` y `latest.yml` al
 MISMO Release `vX` del kiosco (convive con su `latest.json`). En Windows sin modo desarrollador `electron-builder` falla extrayendo `winCodeSign`: ver

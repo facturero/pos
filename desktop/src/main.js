@@ -127,6 +127,25 @@ function getOrCreateJwtSecret() {
   return jwtSecret;
 }
 
+// A qué CRM (gateway) se conecta esta instalación. El kiosco lo recibe de install.sh (`--admin-api-base`); aquí no hay
+// instalador de shell, y sin esta variable el backend arranca pero NO puede emparejar ni sincronizar ("ADMIN_API_BASE_URL
+// no configurado": el código de 6 dígitos se rechazaba siempre, visto el 2026-10-06). Orden: la variable de entorno
+// (para pruebas), luego `adminApiBase` en %APPDATA%\pos-desktop\config.json (para apuntar a otro CRM sin recompilar),
+// y por último el gateway público actual.
+const DEFAULT_ADMIN_API_BASE = "https://api.noahsolution.com";
+function adminApiBase() {
+  if (process.env.ADMIN_API_BASE_URL) return process.env.ADMIN_API_BASE_URL;
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(userDataDir, "config.json"), "utf8"));
+    if (typeof cfg.adminApiBase === "string" && /^https?:\/\//.test(cfg.adminApiBase)) {
+      return cfg.adminApiBase.replace(/\/+$/, "");
+    }
+  } catch {
+    // sin config.json (lo normal) o ilegible: se usa el de siempre
+  }
+  return DEFAULT_ADMIN_API_BASE;
+}
+
 function backendEnv() {
   // Prisma no acepta barras invertidas en el scheme file: se pasa la ruta con "/", que además
   // es la forma que documenta Prisma y la que ya usan los .env del kiosco.
@@ -142,6 +161,10 @@ function backendEnv() {
     JWT_SECRET: getOrCreateJwtSecret(),
     POS_FRONTEND_DIST: frontendDistDir,
     POS_IMAGES_DIR: path.join(dataDir, "product-images"),
+    // Sin esto el backend guardaba los logos del tema en `data/theme-assets` relativo a su carpeta de instalación,
+    // que se reemplaza en cada actualización: se perdían. Van con los datos del usuario.
+    POS_THEME_ASSETS_DIR: path.join(dataDir, "theme-assets"),
+    ADMIN_API_BASE_URL: adminApiBase(),
   };
 }
 

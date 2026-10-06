@@ -32,6 +32,8 @@ const env = {
   JWT_SECRET: "humo-" + Date.now(),
   POS_FRONTEND_DIST: path.join(RES, "frontend-dist"),
   POS_IMAGES_DIR: path.join(tmp, "images"),
+  // el mismo valor por defecto que main.js; sin él el backend no puede hablar con el CRM
+  ADMIN_API_BASE_URL: process.env.ADMIN_API_BASE_URL || "https://api.noahsolution.com",
 };
 
 let fail = 0;
@@ -64,6 +66,12 @@ if (info) {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ username: "nadie", password: "x" }),
   });
+  // un código de emparejamiento inválido debe llegar al CRM y volver con SU rechazo, no con "no configurado"
+  const pair = await fetch(`http://127.0.0.1:${PORT}/setup/pair`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: "000000" }),
+  });
+  const pairBody = await pair.json().catch(() => ({}));
+  check(pair.status === 401 && !/no configurado/i.test(pairBody.error ?? ""), `emparejar con código inválido llega al CRM: "${pairBody.error}"`);
   check(login.status >= 400 && login.status < 500 && !exited, `login inventado -> ${login.status}, backend sigue vivo`);
 }
 if (fail) console.log("--- salida del backend ---\n" + out.slice(-1500));
