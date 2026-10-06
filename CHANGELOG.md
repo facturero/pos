@@ -357,8 +357,13 @@ real contra una 0.3.5 con estos cambios: 0.3.4 → 0.3.5 en **19 s, `exit=0`**, 
   Si una caja estaba marcada con `0.3.4` mala por este bloqueo, se recupera con la siguiente versión
   (`0.3.5` no está en su lista).
 - Las cajas instaladas seguirán sin `stopCmd`/`restart-app.sh` hasta una ISO nueva; no es urgente.
-- Los tags `v0.3.1`–`v0.3.3` apuntan a `44d498c`, que no tiene los arreglos con los que se armaron
+- Los tags `v0.3.1`–`v0.3.3` apuntaban a `44d498c`, que no tiene los arreglos con los que se armaron
   esas releases; los paquetes publicados son correctos. `v0.3.4` sí apunta al commit bueno.
+  **Corrección 2026-10-06:** esas tres releases se armaron con cambios SIN commitear (se commitearon el 2026-10-04, ya
+  después de publicarlas), así que ningún commit es idéntico a lo publicado. Se movieron al commit que contiene el cambio que
+  define cada versión: `v0.3.1` y `v0.3.2` → `ef6a2c8` (empaquetar en el contenedor + reintentos de migración; los dos
+  arreglos viven en el mismo commit) y `v0.3.3` → `2002c90` (autocomplete del login, junto a cambios posteriores). La verdad de
+  lo que lleva cada versión sigue siendo el `.tar.gz` publicado y su `latest.json`, no el árbol del tag.
 - Se evaluó y descartó un parche por SSH (`patch-box.sh`): no escala a un producto multi-organización.
 
 ---
