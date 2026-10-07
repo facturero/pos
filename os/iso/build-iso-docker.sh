@@ -4,7 +4,7 @@
 # Linux con xorriso.
 #
 #   os/iso/build-iso-docker.sh --iso <ubuntu-24.04.X-live-server-amd64.iso> --out <carpeta> \
-#       --admin-api-base https://api.ejemplo.com --ssh-key <clave-publica-tecnico.pub> \
+#       --admin-api-base https://api.ejemplo.com [--ssh-key <clave-publica-tecnico.pub>] \
 #       [--public-key <release-public.pem>] [--manifest-url <url>] [--ssh-allow-from <CIDR>] [--hostname <nombre>]
 #
 # Antes: compilar la ventana (os/window/build-window.sh) para que el binario viaje en la ISO. Si falta se
@@ -33,7 +33,8 @@ done
 [[ -f "$ISO" ]] || die "--iso: no existe el archivo"
 [[ -n "$OUT" ]] || die "falta --out"
 [[ -n "$ADMIN" ]] || die "falta --admin-api-base (URL del gateway del CRM; sin valor por defecto)"
-[[ -f "$SSHKEY" ]] || die "--ssh-key: falta la clave pública del técnico"
+# --ssh-key es OPCIONAL: sin ella la ISO sale en MODO PÚBLICO (para clientes): sin SSH, sin cuenta con sudo y sin clave nuestra.
+[[ -z "$SSHKEY" || -f "$SSHKEY" ]] || die "--ssh-key: no existe el archivo"
 mkdir -p "$OUT"
 
 # ruta absoluta que docker entienda
@@ -43,7 +44,8 @@ ISO_ABS="$(abs "$ISO")"; OUT_ABS="$(cd "$OUT" && { pwd -W 2>/dev/null || pwd; })
   echo "AVISO: no hay os/window/out/facturero-pos-app; la ISO instalará un kiosco sin ventana (ejecuta os/window/build-window.sh)" >&2
 
 # la ISO base y la clave pública se montan de solo lectura; el trabajo va a un volumen de Docker (rápido)
-args=(-e "SSH_AUTHORIZED_KEY=$(tr -d '\r\n' < "$SSHKEY")" -e "ADMIN_API_BASE_URL=$ADMIN" -e "SSH_ALLOW_FROM=$ALLOW")
+KEY_VALUE=""; [[ -n "$SSHKEY" ]] && KEY_VALUE="$(tr -d '\r\n' < "$SSHKEY")"
+args=(-e "SSH_AUTHORIZED_KEY=$KEY_VALUE" -e "ADMIN_API_BASE_URL=$ADMIN" -e "SSH_ALLOW_FROM=$ALLOW")
 [[ -n "$HOST" ]] && args+=(-e "HOSTNAME_OS=$HOST")
 [[ -n "$MANIFEST" ]] && args+=(-e "MANIFEST_URL=$MANIFEST")
 mounts=(-v "$REPO:/repo:ro" -v "$(dirname "$ISO_ABS"):/in:ro" -v "$OUT_ABS:/out")

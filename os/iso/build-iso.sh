@@ -9,7 +9,8 @@
 # Parámetros de la instalación (sin valores en el repo):
 #   ADMIN_API_BASE_URL   gateway del CRM (sin default; producción es el de api.noahsolution.com)
 #   SSH_ALLOW_FROM       CIDR de la red de administración (vacío = sin SSH)
-#   SSH_AUTHORIZED_KEY   clave pública del técnico (obligatoria)
+#   SSH_AUTHORIZED_KEY   clave pública del técnico. OPCIONAL: sin ella la ISO sale en MODO PÚBLICO (para clientes):
+#                        sin servidor SSH, sin cuenta con sudo y sin ninguna clave nuestra.
 #   HOSTNAME_OS          hostname (por defecto facturero-pos)
 #   MANIFEST_URL         dónde consulta actualizaciones (por defecto GitHub Releases de facturero/pos)
 #   RELEASE_PUBLIC_KEY   clave pública de firma (por defecto la de os/release/)
@@ -29,7 +30,14 @@ HOSTNAME=${HOSTNAME_OS:-facturero-pos}
 ADMIN_API_BASE_URL=${ADMIN_API_BASE_URL:-}
 SSH_ALLOW_FROM=${SSH_ALLOW_FROM:-}
 SSH_AUTHORIZED_KEY=${SSH_AUTHORIZED_KEY:-}
-[[ -n "$SSH_AUTHORIZED_KEY" ]] || die "falta SSH_AUTHORIZED_KEY (clave pública del técnico)"
+# Modo público: sin clave de técnico no hay acceso remoto de ningún tipo, así que tampoco tiene sentido una red de admin.
+PUBLIC_MODE=0
+if [[ -z "$SSH_AUTHORIZED_KEY" ]]; then
+  PUBLIC_MODE=1
+  [[ -z "$SSH_ALLOW_FROM" ]] || echo "AVISO: SSH_ALLOW_FROM se ignora: sin clave de técnico no hay SSH" >&2
+  SSH_ALLOW_FROM=""
+  echo "== MODO PÚBLICO: la ISO NO llevará servidor SSH, ni cuenta con sudo, ni clave de técnico =="
+fi
 # Repositorio de actualizaciones que llevará la ISO. Para pruebas sin publicar
 # nada, apuntar a un servidor local (p. ej. MANIFEST_URL=http://host:PORT/latest.json)
 # con un paquete firmado por la misma clave pública que se inyecta abajo.
@@ -44,9 +52,22 @@ rm -rf "$WORK/iso"; mkdir -p "$WORK/iso/boot/grub"
 cp -ra "$SRC" "$WORK/iso/pos-os"
 
 echo "== sustituyendo placeholders en autoinstall.yaml e iso-params.env =="
-sed -e "s|__HOSTNAME__|${HOSTNAME}|" \
+# Los bloques entre los marcadores @TECNICO son el acceso técnico: en modo público se borran enteros; si no, solo
+# se quitan los marcadores.
+if [[ "$PUBLIC_MODE" == 1 ]]; then
+  TECNICO_SED=(-e '/# @TECNICO-INICIO/,/# @TECNICO-FIN/d'); INSTALL_SERVER=false
+else
+  TECNICO_SED=(-e '/# @TECNICO-/d'); INSTALL_SERVER=true
+fi
+sed "${TECNICO_SED[@]}" \
+    -e "s|__HOSTNAME__|${HOSTNAME}|" \
+    -e "s|__SSH_INSTALL_SERVER__|${INSTALL_SERVER}|" \
     -e "s|__SSH_PUB_KEY__|${SSH_AUTHORIZED_KEY}|" \
     "$SRC/iso/autoinstall.yaml" > "$WORK/iso/autoinstall.yaml"
+# (se miran solo las líneas que NO son comentario: los comentarios del yaml hablan de estas cosas)
+if [[ "$PUBLIC_MODE" == 1 ]] && grep -vE '^[[:space:]]*#' "$WORK/iso/autoinstall.yaml" | grep -qiE "authorized-keys|sudoers|NOPASSWD|ssh-(ed25519|rsa)"; then
+  die "modo público: quedó rastro del acceso técnico en autoinstall.yaml"
+fi
 sed -e "s|__ADMIN_API_BASE__|${ADMIN_API_BASE_URL}|" \
     -e "s|__SSH_ALLOW_FROM__|${SSH_ALLOW_FROM}|" \
     -e "s|__SSH_AUTHORIZED_KEY__|${SSH_AUTHORIZED_KEY}|" \

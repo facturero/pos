@@ -20,11 +20,16 @@ autoinstall:
     # y "password: null" da "Malformed autoinstall in identity section". El acceso tecnico es
     # SOLO por SSH con clave (ssh.authorized-keys), desde la red de administracion.
     password: "!"
+  # Acceso tecnico (SSH con la clave del tecnico + sudo sin contrasena). Lo que va entre los marcadores @TECNICO lo
+  # quita build-iso.sh cuando la ISO se construye SIN clave de tecnico (ISO publica para clientes): esa caja no
+  # lleva servidor SSH ni cuenta con sudo, y no trae ninguna clave nuestra. Con clave, solo se quitan los marcadores.
   ssh:
-    install-server: true
+    install-server: __SSH_INSTALL_SERVER__
     allow-pw: false
+    # @TECNICO-INICIO
     authorized-keys:
       - __SSH_PUB_KEY__
+    # @TECNICO-FIN
   storage:
     layout:
       name: lvm
@@ -62,10 +67,12 @@ autoinstall:
       output:
         all: ">> /var/log/cloud-init-output.log"
       EOF
+    # @TECNICO-INICIO
     # 0) el técnico entra solo por SSH con clave (contraseña bloqueada), así que sudo no puede pedir
     #    contraseña: sin esto no podría administrar el equipo. Está limitado por la red de admin (ufw).
     - echo "taller ALL=(ALL) NOPASSWD:ALL" > /target/etc/sudoers.d/90-taller
     - chmod 440 /target/etc/sudoers.d/90-taller
+    # @TECNICO-FIN
     # Se ejecutan en el entorno vivo, con la raíz instalada en /target
     # 1) los scripts del OS viajan en la ISO bajo /cdrom/pos-os
     - mkdir -p /target/opt/facturero

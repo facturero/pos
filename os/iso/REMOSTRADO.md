@@ -10,7 +10,7 @@ hasta que el dueño autorice descargar la ISO y probar en VirtualBox.
 1. **Descargar** `ubuntu-24.04.<X>-live-server-amd64.iso` (~2,7 GB; es la "Live Server", no la de escritorio).
 2. Tener `xorriso` (y `curl`/`tar`) en esa máquina de trabajo.
 3. Definir los **parámetros** sin commitarlos al repo:
-   - `SSH_AUTHORIZED_KEY`: clave pública del técnico (obligatoria; login del usuario `taller` sin contraseña).
+   - `SSH_AUTHORIZED_KEY`: clave pública del técnico (login del usuario `taller` sin contraseña). **Opcional**: sin ella la ISO sale en **modo público** (ver el final de este archivo).
    - `SSH_ALLOW_FROM`: CIDR de la red de administración (vacío = ufw niega todo lo entrante, sin SSH).
    - `ADMIN_API_BASE_URL`: gateway del CRM. **Sin valor por defecto** (producción es `https://api.noahsolution.com`; no fijarlo sin confirmar con el dueño).
 4. Ejecutar `os/iso/build-iso.sh`.
@@ -39,3 +39,9 @@ hasta que el dueño autorice descargar la ISO y probar en VirtualBox.
 - `autoinstall.yaml` solo vale para Server 24.04 LTS (esquema subiquity 1).
 - El reinicio "seco" al final del primer arranque es intencional (entra a X limpio).
 - El equipo de prueba en VirtualBox debería usar bios/EFI según lo que venda el cliente; validar ambos.
+
+## ISO pública (para clientes): sin acceso técnico
+
+Si se construye **sin** `SSH_AUTHORIZED_KEY` (`build-iso-docker.sh` sin `--ssh-key`), la ISO sale en modo público: no instala servidor SSH, no crea el sudo sin contraseña de `taller` y no lleva ninguna clave nuestra; `SSH_ALLOW_FROM` se ignora. Se logra con los bloques `# @TECNICO-INICIO` / `# @TECNICO-FIN` de `autoinstall.yaml`, que `build-iso.sh` borra enteros en ese modo; además aborta si queda rastro (mira solo las líneas que no son comentario). La cuenta `taller` existe (subiquity exige una) pero con la contraseña bloqueada y sin forma de entrar.
+
+Una ISO **con** clave sigue siendo la de siempre para instalaciones propias. La que se publica es la pública. La de pruebas lleva `SSH_ALLOW_FROM=10.0.2.0/24` (la red de VirtualBox) y la clave del técnico, y NO debe publicarse.

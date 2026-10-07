@@ -24,6 +24,14 @@ de IVA en la caja y stock real (siguen abiertas de sesiones anteriores).
 
 ---
 
+## 2026-10-07 — ISO pública del kiosco (sin acceso técnico) lista para publicar
+
+La ISO de pruebas (`iso-0.3.5`) no era publicable: llevaba `SSH_ALLOW_FROM=10.0.2.0/24` (la red de VirtualBox) y la clave pública del técnico con la cuenta `taller` con sudo sin contraseña. Ahora `--ssh-key` / `SSH_AUTHORIZED_KEY` es **opcional**: sin ella la ISO sale en **modo público** (sin servidor SSH, sin sudo, sin clave nuestra; los bloques `@TECNICO` de `autoinstall.yaml` se borran y `build-iso.sh` aborta si queda rastro).
+Construida en `C:/Users/sansh/facturero-iso/publica/` (4 084 727 808 bytes, sha256 `80d2bb44b392218f25f0e79aae0fb40e379ade1edabf6560d9e61316cb74922f`) y verificada abriéndola: `ADMIN_API_BASE_URL=https://api.noahsolution.com`, `SSH_ALLOW_FROM` y clave vacíos, `ssh.install-server: false`, clave de firma y manifiesto de `facturero/pos`.
+**Probada en una VM de VirtualBox (BIOS, 4 GB, 30 GB):** instala sola (~11 min con descarga de la app), primer arranque, reinicio y kiosco en `v0.3.12` con la pantalla «Configurar este POS» y red por cable; un `ssh` con la clave del técnico no recibe saludo (no hay servidor SSH). No se emparejó con un código real. Alojamiento: Cloudflare R2 (`descargas.noahsolution.com`), porque GitHub no admite archivos de más de 2 GiB; pasos en `presentacion/README.md`.
+
+---
+
 ## 2026-10-06 — App de Windows (`.exe`) generada: `POS-Desktop-Setup-0.3.12.exe` (sin release del kiosco)
 
 `pos/desktop/` (Electron, proyecto aparte de `os/`) ya produce el instalador: `npm run build:win` → `out/POS-Desktop-Setup-0.3.12.exe`
