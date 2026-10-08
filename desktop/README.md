@@ -112,7 +112,14 @@ misma del kiosco) y `stage-backend.mjs` la escribe en `dist/VERSION` para que el
    `node.exe` y una base temporal: migra, comprueba `/health`, `/system/info` (versión + modo desktop), que sirve la
    pantalla y que argon2 carga. No abre ventana.
 
-**Para publicarlo:** sube `POS-Desktop-Setup-X.exe`, `POS-Desktop-Setup-X.exe.blockmap` y `latest.yml` al **mismo**
+**Publicación automática:** al crear la etiqueta `vX.Y.Z`, `.github/workflows/desktop-release.yml` construye el `.exe` en un
+runner de Windows (frontend, backend, Node propio, `electron-builder --publish never`), pasa la prueba de humo y lo sube
+a la Release que crea `release.yml`. Falla si `package.json` no dice `X.Y.Z`. Sin certificado el instalador sale sin
+firma. Con un `.pfx`, `CSC_LINK` y `CSC_KEY_PASSWORD` como secretos del repo lo firman; con firma en la nube hace falta
+un script `win.sign` propio (ver `COSAS-POR-HACER.md`). También se puede lanzar a mano desde
+Actions para reconstruir una versión que ya existe. (El flujo manual de abajo sigue valiendo.)
+
+**Para publicarlo a mano:** sube `POS-Desktop-Setup-X.exe`, `POS-Desktop-Setup-X.exe.blockmap` y `latest.yml` al **mismo**
 Release `vX` del kiosco (`latest.yml` es el manifiesto de `electron-updater`; no choca con el `latest.json` firmado
 del kiosco). El número del `.exe` debe ser el del Release: sube `version` en `package.json` antes de empaquetar.
 

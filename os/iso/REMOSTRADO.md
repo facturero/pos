@@ -45,3 +45,13 @@ hasta que el dueño autorice descargar la ISO y probar en VirtualBox.
 Si se construye **sin** `SSH_AUTHORIZED_KEY` (`build-iso-docker.sh` sin `--ssh-key`), la ISO sale en modo público: no instala servidor SSH, no crea el sudo sin contraseña de `taller` y no lleva ninguna clave nuestra; `SSH_ALLOW_FROM` se ignora. Se logra con los bloques `# @TECNICO-INICIO` / `# @TECNICO-FIN` de `autoinstall.yaml`, que `build-iso.sh` borra enteros en ese modo; además aborta si queda rastro (mira solo las líneas que no son comentario). La cuenta `taller` existe (subiquity exige una) pero con la contraseña bloqueada y sin forma de entrar.
 
 Una ISO **con** clave sigue siendo la de siempre para instalaciones propias. La que se publica es la pública. La de pruebas lleva `SSH_ALLOW_FROM=10.0.2.0/24` (la red de VirtualBox) y la clave del técnico, y NO debe publicarse.
+
+## Revisión de la marca de Ubuntu (2026-10-08)
+
+La ISO es una versión **modificada** de Ubuntu Server 24.04 LTS. Canonical permite redistribuirla, pero no que se presente como Ubuntu ni como respaldada por ellos. Lo que ya cumple y lo que se cambió:
+
+- **Pantallas que ve la persona:** el menú de arranque (`grub.cfg` propio, una sola entrada «Instalar POS KIOSKO»), la pantalla de instalación y la del primer arranque dicen «POS KIOSKO · un producto de noahsolutions». No sale el nombre ni el logo de Ubuntu (se sustituyó todo el menú de Ubuntu).
+- **Cambiado:** la etiqueta del volumen de la ISO (lo que muestra el sistema al montarla) ahora es `POS_KIOSKO`; antes heredaba la de Canonical («Ubuntu-Server 24.04…»). Está en `build-iso.sh` (`-volid`). **No se ha vuelto a arrancar una ISO con este cambio**: antes de publicar la próxima, reconstruirla y probarla en la VM como siempre.
+- **Atribución:** la página de descargas (`presentacion/`, `isoLegal` en `src/data/pos.ts`) dice que está basada en Ubuntu Server, que Ubuntu es marca de Canonical, que no es un producto suyo ni cuenta con su respaldo, y dónde está el código fuente (archive.ubuntu.com/ubuntu, launchpad.net).
+- **No tocado a propósito:** el sistema instalado sigue siendo Ubuntu (paquetes del archivo oficial, `/etc/os-release` y `/etc/issue` dicen Ubuntu). Eso es lo correcto para un derivado y solo se ve con acceso a consola, que la ISO pública no da (sin SSH ni cuenta con sudo).
+- **Pendiente de una persona:** esto es una revisión técnica, no asesoría legal. Si el producto se vende de forma masiva, conviene que alguien lea la política de propiedad intelectual de Canonical (ubuntu.com/legal/intellectual-property-policy) y confirme que la remasterización encaja.

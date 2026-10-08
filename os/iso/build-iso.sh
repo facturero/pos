@@ -111,6 +111,7 @@ EOF
 echo "== escribiendo la ISO ($OUT) =="
 rm -f "$OUT"
 xorriso -indev "$ISO" -outdev "$OUT" -boot_image any replay \
+  -volid "POS_KIOSKO" \
   -map "$WORK/iso/pos-os" /pos-os \
   -map "$WORK/iso/autoinstall.yaml" /autoinstall.yaml \
   -map "$WORK/iso/iso-params.env" /iso-params.env \

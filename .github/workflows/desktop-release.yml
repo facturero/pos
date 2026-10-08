@@ -1,0 +1,114 @@
+name: Release POS Desktop (Windows)
+
+# Construye el instalador de Windows (`POS-Desktop-Setup-X.exe`) y lo sube a la Release `vX` que ya crea `release.yml`
+# para el kiosco. Hasta hoy el .exe se construía a mano en un PC (`npm run build:win`) y se subía con `gh release upload`.
+#
+# Se dispara con la misma etiqueta vX.Y.Z. También se puede lanzar a mano (Actions → Run workflow) para reconstruir el
+# .exe de una versión que ya tiene Release.
+#
+# FIRMA: todavía NO firma. Windows con Smart App Control bloquea el instalador sin firma. Las claves nuevas de los
+# certificados de firma viven en la nube (HSM) y no se entregan como .pfx, así que `CSC_LINK` solo sirve si algún día hay
+# un .pfx. Con firma en la nube hace falta además un script `win.sign` en desktop/package.json y los secretos del proveedor.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Etiqueta de la Release (por ejemplo v0.3.13)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout (con la etiqueta)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      # El número del .exe es el de desktop/package.json y tiene que ser el de la Release: electron-updater compara
+      # versiones, y un .exe 0.3.12 colgado de la Release v0.3.13 no se actualizaría nunca.
+      - name: La versión del .exe coincide con la etiqueta
+        run: |
+          VERSION="$(node -p "require('./desktop/package.json').version")"
+          if [ "v${VERSION}" != "${TAG}" ]; then
+            echo "desktop/package.json dice ${VERSION} pero la etiqueta es ${TAG}. Sube 'version' y vuelve a etiquetar." >&2
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Frontend del POS (lo empaqueta el .exe)
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
+      # stage-backend.mjs compila el backend con tsc, así que necesita también sus dependencias de desarrollo.
+      - name: Dependencias del backend
+        working-directory: backend
+        run: npm ci --no-audit --no-fund
+
+      - name: Dependencias del .exe
+        working-directory: desktop
+        run: npm ci --no-audit --no-fund
+
+      - name: Preparar recursos (Node 22 propio + backend de producción)
+        working-directory: desktop
+        run: npm run prepare:resources
+
+      # Hoy no hay certificado y el instalador sale sin firma. CSC_LINK/CSC_KEY_PASSWORD solo aplican a un .pfx (ver cabecera).
+      - name: Construir el instalador
+        working-directory: desktop
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: npx electron-builder --win --publish never
+
+      # La prueba de humo arranca el paquete armado con SU node.exe: migra, responde /health y carga argon2.
+      - name: Prueba de humo del paquete
+        working-directory: desktop
+        run: node scripts/smoke-unpacked.mjs
+
+      - name: Esperar a que exista la Release (la crea release.yml)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for i in $(seq 1 40); do
+            if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+              echo "La Release ${TAG} existe."
+              exit 0
+            fi
+            echo "Esperando a la Release ${TAG} (${i}/40)..."
+            sleep 30
+          done
+          echo "La Release ${TAG} no apareció. Revisa el workflow «Release POS»." >&2
+          exit 1
+
+      - name: Subir el instalador, el blockmap y latest.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: desktop/out
+        run: |
+          VERSION="${TAG#v}"
+          gh release upload "${TAG}" \
+            "POS-Desktop-Setup-${VERSION}.exe" \
+            "POS-Desktop-Setup-${VERSION}.exe.blockmap" \
+            latest.yml \
+            --repo "${GITHUB_REPOSITORY}" --clobber
