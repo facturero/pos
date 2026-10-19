@@ -28,8 +28,12 @@ const app = new Hono();
 
 app.use("*", logger());
 // Solo escucha en localhost, así que CORS aquí es únicamente para que la
-// webview de Tauri (origen distinto) pueda llamar a esta API.
-app.use("*", cors());
+// webview de Tauri (origen distinto) y el Vite de desarrollo puedan llamar a
+// esta API. Con `cors()` abierto, cualquier página web abierta en el equipo
+// del POS podía leer las respuestas de esta API local; ahora solo orígenes
+// locales.
+const LOCAL_ORIGIN = /^(https?:\/\/(127\.0\.0\.1|localhost|tauri\.localhost)(:\d+)?|tauri:\/\/localhost)$/;
+app.use("*", cors({ origin: (origin) => (LOCAL_ORIGIN.test(origin) ? origin : null) }));
 
 app.get("/health", async (c) => {
   try {
